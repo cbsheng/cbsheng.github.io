@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>计算机网络笔记-运输层2 - 无远弗届</title>
+  <meta property="og:title" content="计算机网络笔记-运输层2 - 无远弗届" />
+  <meta name="twitter:title" content="计算机网络笔记-运输层2 - 无远弗届" />
+  <meta name="description" content="运输层还有很多有趣的事情。
+
+">
+  <meta property="og:description" content="运输层还有很多有趣的事情。
+
+">
+  <meta name="twitter:description" content="运输层还有很多有趣的事情。
+
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B02-%E8%BF%90%E8%BE%93%E5%B1%82/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">计算机网络笔记-运输层2</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>August 6, 2015</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/network/">
+            <i class="fas fa-folder"></i>
+            network
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/tcp/ip/">
+            <i class="fas fa-tag"></i>
+            TCP/IP
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  
+</aside>
+      <p>运输层还有很多有趣的事情。</p>
+
+<p></p>
+
+<p>本文的内容：
+1. 四次挥手中的2MSL
+2. 四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述
+3. 流量控制与拥塞避免
+4. 滑动窗口的三种变化</p>
+
+<hr />
+
+<p>#1.四次挥手中的2MSL</p>
+
+<p>接着<a href="http://cbsheng.github.io/2014/12/10/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0-%E8%BF%90%E8%BE%93%E5%B1%82/">&lt;&lt;计算机网络笔记1-运输层&gt;&gt;</a>的介绍，其实处于2MSL中，socket(四元组)是不能再被用的了。所以在2MSL内所有迟来的数据都被丢弃掉，因为在这段时间里，残留的在网络中的数据报会逐渐地消失。</p>
+
+<p>TCP规范也规定，在2MSL内，四元组是不能够被重用的，试想，如果重用了。那么残留的数据报很可能会对新连接造成影响，因为四元组是一样的，那就只是靠序号去做判断了。然后在<a href="https://tools.ietf.org/html/rfc1185">RFC 1185</a>中被指出，靠序号这种做法仍可能存在缺陷。所以，比较好的做法的，在2MSL内不重用四元组，下一个新的连接客户端应选择别的端口号，这样就会有新的四元组。</p>
+
+<p><strong>那重用四元组的手段是什么呢？</strong>
+很多实现中其实都有提供<strong>SO_REUSEADDR</strong>这个选项，它能够使得在2MSL内重用端口。具体可以参考这个用python写的服务端<a href="https://github.com/cbsheng/snippets/tree/master/network%20programming/python">代码</a>。你可以通过注释<strong>SO_REUSEADDR</strong>所在的语句来观察结果。</p>
+
+<p>实际上，2MSL是发生在被关闭的那一端，意思是服务端在接受到客户端的<strong>FIN</strong>时也会发起2MSL。</p>
+
+<hr />
+
+<p>#2.四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述
+先看图：
+<img src="/img/network/TCPfour-way handshake.png" alt="TCP four-way handshake" /></p>
+
+<p><strong>FIN-WAIT2状态</strong>是等待服务端发起<strong>FIN</strong>。
+<strong>CLOSE_WAIT状态</strong>是服务端自身的等待。</p>
+
+<p><strong>先讲CLOSE_WAIT状态，为什么服务端自身在等待呢？</strong>
+因为这时候是<strong>半关闭</strong>，服务端仍可能有数据往客户端发送。而图中的<strong>通知应用进程</strong>的箭头，就是收到来客户端的FIN，然后会为数据的末尾添加一个<strong>文件结束符(EOF)</strong>以此来通知应用进程。具体这里还可以参考POSIX里的recv/recvfrom/recvmsg(sys/socket.h)这三个函数对返回值的定义。</p>
+
+<p><strong>那么问题来了，万一服务端永远待在CLOSE_WAIT状态怎么办？</strong>
+在实际的实现中，会采用定时器之类的方法进行强制关闭。</p>
+
+<hr />
+
+<p>#3.流量控制与拥塞避免</p>
+
+<p>流量控制是针对<strong>接受方</strong>的。
+因为在接收方中有接受缓存，发送方即使发送再多也会被丢弃。根据接受方的接受缓存窗口大小，也可以控制双方的发送速率与接受速率。</p>
+
+<p>拥塞避免是针对<strong>发送方</strong>的。
+如果接收方的接受缓存可以很大，是否意味着发送方就可以提高发送的速率呢？不是的，因为在网络中会存在速率较慢的链路，这样在这些区域的路由器就会缓存数据，路由器的缓存是有限的，达到最值就会溢出。假如数个速率不加限制地往接收方发送数据，甚至会在某个路由器或某个区域造成拥塞，把整个网络的吞吐量等性能都拉低。所以发送方是必须做拥塞避免的。</p>
+
+<hr />
+
+<p>#4. 滑动窗口的三种变化</p>
+
+<ol>
+<li>窗口左边沿向右边沿靠近为窗口合拢。这种变化是因为收到ACK。</li>
+<li>窗口右边沿向右移动从而允许发送更多的数据，称为窗口张开。这种变化是因为接受进程读取已经确认的数据，因而释放了接收方的接受缓存。</li>
+<li>窗口右边沿向左移动，称为窗口收缩。这种方式不被建议实现。</li>
+</ol>
+
+<p>在发送方，发送缓存的窗口值必须小于或等于接收方在TCP首部添的16位窗口值。什么时候会小于？滑动窗口第一种变化就会小于。</p>
+
+<p><strong>本文会随着review而保持更新</strong></p>
+
+<p>##完</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E4%BB%8E%E7%A1%AC%E4%BB%B6%E5%87%BA%E5%8F%91%E6%B5%85%E8%B0%88%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E7%9A%84%E6%AE%B5%E6%9C%BA%E5%88%B6%E4%B8%8E%E9%A1%B5%E6%9C%BA%E5%88%B6/" data-toggle="tooltip" data-placement="top" title="从硬件出发，浅谈操作系统的段机制与页机制">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

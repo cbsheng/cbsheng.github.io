@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>现代操作系统-笔记 - 无远弗届</title>
+  <meta property="og:title" content="现代操作系统-笔记 - 无远弗届" />
+  <meta name="twitter:title" content="现代操作系统-笔记 - 无远弗届" />
+  <meta name="description" content="本文整理了在学习操作系统储存管理过程中的一些知识点和思考。如有错漏，还望指正。
+
+">
+  <meta property="og:description" content="本文整理了在学习操作系统储存管理过程中的一些知识点和思考。如有错漏，还望指正。
+
+">
+  <meta name="twitter:description" content="本文整理了在学习操作系统储存管理过程中的一些知识点和思考。如有错漏，还望指正。
+
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E7%8E%B0%E4%BB%A3%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F-%E7%AC%94%E8%AE%B0/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">现代操作系统-笔记</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>November 20, 2014</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/os/">
+            <i class="fas fa-folder"></i>
+            OS
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/book-note/">
+            <i class="fas fa-tag"></i>
+            book note
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li><a href="#存储管理">存储管理</a>
+<ul>
+<li><a href="#1-什么是虚拟内存">1.什么是虚拟内存</a></li>
+<li><a href="#2-什么是分页">2.什么是分页</a></li>
+<li><a href="#3-什么是页表">3.什么是页表</a></li>
+<li><a href="#4-在分页式系统中-需要考虑的两个主要问题">4.在分页式系统中，需要考虑的两个主要问题</a></li>
+<li><a href="#5-什么是转换检测缓冲区-tlb">5.什么是转换检测缓冲区(TLB)</a>
+<ul>
+<li><a href="#tlb管理">TLB管理</a></li>
+<li><a href="#典型的tlb">典型的TLB</a></li>
+</ul></li>
+<li><a href="#6-多级页表">6.多级页表</a></li>
+<li><a href="#7-缺页中断问题">7.缺页中断问题</a>
+<ul>
+<li><a href="#最佳置换算法-opt">最佳置换算法（OPT）</a></li>
+<li><a href="#先进先出-fifo">先进先出(FIFO)</a></li>
+</ul></li>
+<li><a href="#最近未使用-nru">最近未使用（NRU）</a></li>
+<li><a href="#最近最久未使用-lru">最近最久未使用(LRU)</a></li>
+<li><a href="#最近不经常使用-nfu">最近不经常使用（NFU）</a></li>
+<li><a href="#老化算法">老化算法</a>
+<ul>
+<li><a href="#未完"><strong>未完</strong></a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p>本文整理了在学习操作系统储存管理过程中的一些知识点和思考。如有错漏，还望指正。</p>
+
+<p></p>
+
+<p><strong>本文长期保持更新</strong></p>
+
+<hr />
+
+<h1 id="存储管理">存储管理</h1>
+
+<p>储存管理实际上就是内存管理。关于这块，通过以下几个问题来理清当中重要的概念。
+1. 什么是虚拟内存
+2. 什么是分页
+3. 什么是页表
+4. 在分页式系统中，需要考虑的两个主要问题
+5. 什么是转换检测缓冲区(TLB)
+6. 多级页表
+7. 缺页中断问题</p>
+
+<hr />
+
+<h2 id="1-什么是虚拟内存">1.什么是虚拟内存</h2>
+
+<p>介绍虚拟内存前先介绍两个寄存器：
+&gt; <strong>基址寄存器与界限寄存器</strong>
+&gt; 没有对内存进行抽象时，程序每条指令对应的都是一个绝对的物理内存地址，如果两个程序的某个操作都涉及到同一地址20上的数据，就会发生问题。所以没有内存的抽象是不能进行多程序设计的。在对内存地址进行抽象之后，引入了两个寄存器。每次进程要要访问内存某个地址上的数据时，都需要先将进程发出的地址加上基址寄存器，然后与界限寄存器作比较，合法则把值送到内存总线上。</p>
+
+<p>虚拟内存就是对地址空间的抽象，它的对象是进程，欺骗进程，让进程觉得自己是在一段连续地址空间上。使用虚拟内存的其中一个好处就是<strong>&ldquo;小内存可以运行大作业&rdquo;</strong>。就是内存为32KB的机器可以运行64KB大小的程序。利用的正是虚拟内存的动态加载技术。</p>
+
+<p><strong>虚拟内存基本思想：</strong>每个程序拥有自己的地址空间，这个空间被分割乘多个块，每一个块也就是一页。每一页有连续的地址范围。这些页都被映射到物理内存上，但只需程序引用到的页在物理内存就可以了，不需要把页全部装入。当引用到的页不在物理内存时，才由操作系统负责将缺失的页调入到物理内存中。接着重新运行失败的指令。</p>
+
+<p>最初虚拟内存是与交换技术具有一样作用，就是为了解决物理内存容量满足不了程序大小增长的需求。交换技术的原理就是把不运行的进程从内存中放到磁盘上以致于腾出内存空间供别的进程运行。交换技术就很好地利用了基址寄存器和界限寄存器。可它的问题是，每次都需要全部装入全部移出。与之相比，虚拟内存利用分页技术，把需要的那一部分的代码驻于内存中足以，暂时不需要的就放在磁盘中。</p>
+
+<blockquote>
+<p>交换技术的缺点是：它会造成内存空洞，需要用到内存紧缩的方法去解决空洞。可是内存紧缩技术十分地消耗CPU，所以一般不采用。</p>
+</blockquote>
+
+<p>与虚拟内存有关的两个简单概念：
+1. 虚拟地址
+2. 虚拟地址空间
+<strong>虚拟地址</strong>是由程序产生的。例如** MOV REG， 3451 <strong>或者通过</strong>CS + IP<strong>取的下一条执行指令地址，都是虚拟地址。而由这些虚拟地址构成</strong>虚拟地址空间**。</p>
+
+<p>在虚拟内存的概念下，物理地址的产生是需要一个叫内存管理单元（MMU）的硬件。由它把虚拟内存转换为物理地址。
+<img src="/img/os_mem/MMU.gif" alt="MMU" /></p>
+
+<hr />
+
+<h2 id="2-什么是分页">2.什么是分页</h2>
+
+<p>将虚拟地址空间按固定的大小（例如4KB）划分成称为页面的若干单元。在物理内存中对应的单元称为页框。页面的大小通常和页框的大小一致。
+<img src="/img/os_mem/page_sys.png" alt="分页技术" /></p>
+
+<p>一个进程经过这样分页之后，就可以灵活地不必按序地存在空闲的内存空间上。这样做能够减少内存的碎片化。</p>
+
+<blockquote>
+<p>分页技术的发明是为了获得更大的线性地址空间而不必购买更大的物理储存器。</p>
+</blockquote>
+
+<hr />
+
+<h2 id="3-什么是页表">3.什么是页表</h2>
+
+<p>但是分页之后，如何去定位到物理地址呢？页表就是解决这个问题的。</p>
+
+<p>每个进程度会有自己的页表。页表里存放的是虚拟页号和对应页框的关系。通过页号找到对应页表项，页表项中存放着页框号和一些标志位。页表项常用的大小是32位。
+<img src="/img/os_mem/PTE.png" alt="页表项" /></p>
+
+<p>16位的虚拟地址被拆分为高4位页框和低12位的页内偏移地址。通过高4位页号定位到页框号，然后将页框号加上低12位的页内偏移地址就可以得到物理地址。
+<img src="/img/os_mem/page.gif" alt="虚拟地址转换" /></p>
+
+<p>页表最初是放到MMU中，后来页表被存放到内存中，用一个寄存器指向页表的位置。</p>
+
+<hr />
+
+<h2 id="4-在分页式系统中-需要考虑的两个主要问题">4.在分页式系统中，需要考虑的两个主要问题</h2>
+
+<p>考虑问题的解决方法好不好时，问题规模增大的情况是一个不可避免的考虑因素。同样地，随着虚拟地址空间的增大，页表会很大，并且虚拟地址转物理地址的速度也要保证足够的快。
+因此，在分页式系统中就要解决两个问题：
+1. 地址转换的速度
+2. 页表增大的问题</p>
+
+<p>这两个问题分别可以通过TLB和多级页表的方法进行解决。</p>
+
+<hr />
+
+<h2 id="5-什么是转换检测缓冲区-tlb">5.什么是转换检测缓冲区(TLB)</h2>
+
+<p>TLB就是为解决地址转换速度而生的。如果不用TLB，会有什么问题？
+我们知道CPU会从内存中获取指令和数据，而每次获取的时候都需要访问页表进行定位，也就是说，每次内存访问都需要额外的两次页表内存访问。这样做会降低了一半的性能。</p>
+
+<p>为了解决这个问题，多年以来计算机学者都意识到一种现象：
+&gt; 大多数程序总是对少量的页面进行多次的访问，而不是相反的。</p>
+
+<p>基于这个现象，那么就可以利用硬件做一个缓冲。</p>
+
+<p><img src="/img/os_mem/TLB1.png" alt="TLB" /></p>
+
+<p>TLB中的表项一般不会多，在实际中很少会超过64个。每个表项除了有虚拟页号和页框号之外，还有一些标志位。
+<img src="/img/os_mem/TLB_entry.jpg" alt="TLB表项" /></p>
+
+<p>每次地址转换的时候，都是<strong>并行地</strong>在TLB中进行匹配。匹配成功则直接返回页框号，就不需要到页表中查询。匹配失败的情况(TLB失效)在后面介绍。</p>
+
+<h3 id="tlb管理">TLB管理</h3>
+
+<p>对于TLB的管理，有两种：
+1. 硬件管理
+2. 软件管理</p>
+
+<p><strong><em>硬件管理</em></strong>：
+最开始是由硬件MMU进行管理的，包括TLB失效。当TLB失效时候，硬件去查找页表，然后更新TLB的表项，接着从失效处再次运行。这时因为更新了TLB表项，所以这次肯定会命中。如果硬件在页表中找不到的话，这时就发生缺页中断，陷入操作系统。操作系统进行磁盘IO操作，把缺失的页调进来之后，从中断处重新执行。接着就会更新TLB表项，再次从失效处重新运行。
+<strong><em>软件管理</em></strong>：
+而现代，许多的机器已经由软件进行TLB管理了。与硬件管理不同的是，发生TLB失效时，不再由硬件处理，而是直接交给操作系统处理，操作系统从页表中找，如果找不到就缺页中断，磁盘IO完毕之后再从中断处执行，直到把TLB表项更新完毕。
+&gt; 无论是用硬件还是软件来处理TLB失效，常见方法都是找到页表并执行索引操作以定位将要访问的页面。</p>
+
+<p><img src="/img/os_mem/TLB.png" alt="TLB失效" /></p>
+
+<p>TLB失效时，在内存页表中寻找时，称为<strong>软失效</strong>。不需要磁盘IO处理，典型的处理需要10～20个机器指令。但是如果在内存页表中找不到需要磁盘IO处理时，称为<strong>硬失效</strong>，这个过程的处理时间往往是软失效的百万倍！</p>
+
+<h3 id="典型的tlb">典型的TLB</h3>
+
+<ul>
+<li>寻中时间：0.5 - 1 时钟频率周期</li>
+<li>不命中代价：10 - 30 时钟频率周期</li>
+<li>不命中率: 0.01% - 3%</li>
+</ul>
+
+<hr />
+
+<h2 id="6-多级页表">6.多级页表</h2>
+
+<p>考虑到虚拟内存空间的增大会带来页表的增大，所以必须解决这问题。</p>
+
+<p>如果观察进程在内存中的布局，不难发现进程申请的内存中有大部分的空间是未使用到的，例如堆和堆栈都是动态增长的。所以那未使用到的内存对应的页表完全可以不加载进来，放到磁盘上。
+<img src="/img/os_mem/process_mem_layout.jpg" alt="process\_memory\_layout" /></p>
+
+<p>把原来的一级页表转为二级页表就可以解决问题。甚至可以转为三级页表，但超过三级页表就会带来更大的复杂性。liunx使用的就是三级页表。
+<img src="/img/os_mem/two_level_table.jpg" alt="two-level-page-table" /></p>
+
+<p>可以看到顶级页表中间索引到的页表可以不加载进内存当中来，需要的时候再加载。
+&gt; 引入多级页表的原因是避免把全部页表一直保存在内存中。</p>
+
+<p>使用多级页表的方式，虚拟地址的构造解析自然就需要改变，不再是<strong>页号：偏移地址</strong>的形式了。在二级页面中，虚拟地址被划分为<strong>顶级页表:二级页表:偏移量</strong>的形式。
+<img src="/img/os_mem/virtual_addr_of_two_level_table.gif" alt="virtual\_address" /></p>
+
+<p>二级页表的转换机制见上图，而其他的三级页表、多级页表同理。</p>
+
+<p>而在64位的机器上，由于地址线为64位。页表的容量十分地大，如果每一个表项8个字节，整个页表就会超过30PB。
+解决这个问题的方案之一是<strong>倒排页表</strong>。
+&gt; 倒排页表就是在实际内存中每一个页框有一个表项，而不是每一个虚拟页面有一个表项。</p>
+
+<p>倒排页表存在的缺点是其虚拟地址的转换会变得困难。</p>
+
+<hr />
+
+<h2 id="7-缺页中断问题">7.缺页中断问题</h2>
+
+<p>当发生缺页中断的时候，操作系统需要从内存中选出一个页面将其调出，然后加载进新的页面。
+&gt; 好的页面置换算法能提高CPU的性能。</p>
+
+<p>常用的页面置换算法有：
+1. 最佳置换算法 （Optimal)
+2. 先进先出 (Fiset In First Out)
+3. 最近未使用 （No Used Recently)
+4. 最近最久未使用 （Last Recently Used)
+5. 最近不经常使用 （Not Frequently Used)
+6. 老化算法</p>
+
+<h3 id="最佳置换算法-opt">最佳置换算法（OPT）</h3>
+
+<p>这个算法不可能实现，但它能作为别的算法一个十分好的参考。</p>
+
+<p>算法的思想是：
+&gt; 在页面置换时，选择的老页面要在最远的将来才会被访问得到。</p>
+
+<p>因为它需要<strong>预知</strong>一些页面的在往后的什么时候或者是多少条指令后会再被执行，所以不可能实现。
+<img src="/img/os_mem/opt.jpg" alt="OPT" /></p>
+
+<p>图片上面的数字意思是下一条指令需要用到的页面号。</p>
+
+<p>可以通过仿真，预先执行一次，获得页面的走向，以用于与别的算法进行性能比较，作一个参考。</p>
+
+<h3 id="先进先出-fifo">先进先出(FIFO)</h3>
+
+<p>先进先出的思想就是先进来的页面在缺页置换的时候会被先调出去。</p>
+
+<p>但是纯粹的先进先出算法可能会淘汰出一些常用页面，所以要对它进行改进一下。</p>
+
+<p>改进的方法叫做第二次机会。思想是在必须换出页面的时候，给该页面第二次机会。检查该页面的R位是否为1，如果是，则将该页面放到队尾。如果是0，则直接换出。假如全部检查一轮后全都没有被换出，那样就换出第一个被检查的页面。
+<img src="/img/os_mem/second_change.png" alt="second\_change" /></p>
+
+<p>第二次机会算法需要经常去移动结点，这样造成效果不高。改进的方法可以把链表做成环链。用一个指针指向队头，每次换出时检查指针指向页面的R位，如果为0直接换出，否则，置0后，指针前移，一直重复，直到找到R位为0的页面为止。
+<img src="/img/os_mem/clock.png" alt="clock" /></p>
+
+<h2 id="最近未使用-nru">最近未使用（NRU）</h2>
+
+<p>这个算法需要为每一个页面设置两个位，一个是<strong>被访问</strong>，另一个是<strong>被修改</strong>。 <strong><em>这两个位的值都是由硬件设置的</em></strong>。
+<strong>被访问</strong>位会被定期的清零。例如是每次的时钟中断时。这样的话，这个位的值在发生缺页中断就会提供一个很好的参考价值。</p>
+
+<p>那么根据这两个位，一个页面可能会存在的状态就会有：
+* （第一类）没有被访问， 没有被修改
+* （第二类）没有被访问， 已被修改
+* （第三类）已被访问， 没有被修改
+* （第四类）已被访问， 已被修改</p>
+
+<p>那么当发生缺页中断时：
+&gt; 淘汰一个没有被访问但已修改的页面要比一个经常被访问但没被修改的页面要好。</p>
+
+<p>所以，页面置换的时候，根据现在内存中进程页面的状态，从最小类别的页面中随机选择一个页面将其淘汰掉。
+例如： 存在第一类，就随机淘汰属于这类的页面。如果没有，就寻找第二类的，以此类推。</p>
+
+<p>NRU算法的优点是比较好理解和实现，但是性能不是最优。</p>
+
+<h2 id="最近最久未使用-lru">最近最久未使用(LRU)</h2>
+
+<p>LRU算法它基于这种的一个思想：
+&gt; LRU works on the idea that pages that have been most heavily used in the past few instructions are most likely to be used heavily in the next few instructions too.
+最近频繁使用的页面在未来的指令中仍会被使用，反过来，很久没使用过的页面在未来的较长一段时间里仍然不会被使用。</p>
+
+<p>这个思想是这样理解的：在需要的换页时，我们认为在换页发生前所执行的几条指令在未来仍会执行。而在更远前的几条指令在未来的较长时间里不会被执行。</p>
+
+<p>实现这个算法，就需要去维护每个页面的使用情况这样一个链表。这个链表放在内存中，较多使用的放在链表头，较少的就放在链表尾。然而每次访问页面的时候都需要去更新这个链表，移动结点，这样带来的开销十分大，代价高。</p>
+
+<p>那么，可以通过使用特殊的硬件去实现LRU，直接通过硬件就可以选择出最近最久未使用的页面。问题并不是每台PC都有这样一个硬件。所以就需要用软件去模拟LRU算法，那就是最近不常用算法（NFU）。</p>
+
+<h2 id="最近不经常使用-nfu">最近不经常使用（NFU）</h2>
+
+<p>这个算法只是一个非常粗鲁地LRU软件模拟硬件的算法。
+它的思想是，每个页面有一个counter的计数器。这个计数器会在系统每次时钟中断的时候由操作系统修改，怎样修改呢？操作系统会把该页面上的R位的值加在counter上面，以此来跟踪页面。所以在选择换出页面的时候，就选择counter最小的页面。</p>
+
+<p>因为这个算法只是LRU的相对粗略的近似，所以其性能只是一般。</p>
+
+<h2 id="老化算法">老化算法</h2>
+
+<p>老化算法是针对NFU的改进。NFU的问题在于它会一直的记录，这样可能会造成有用的页面反而被置换出去了。</p>
+
+<p>老化算法根据每次时钟中断时页面的R位去设置一个计数器。设置的方法是将计算器右移一位，然后把R位的值放到最左边。在换页的时候就选择计数器最小值的页面。
+详细的介绍可以参考<a href="http://course.cug.edu.cn/21cn/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%EF%BC%88%E4%B8%8A%E6%B5%B7%E4%BA%A4%E5%A4%A7%EF%BC%89/chapter4/section4/old.htm">这里</a></p>
+
+<p>针对老化算法中计数器的位数不足问题。其实在实践中，如果时间滴答是20ms，8位一半是够用的。假如一个页面已经有160ms没有被访问过，那么它很可能并不重要。</p>
+
+<h3 id="未完"><strong>未完</strong></h3>
+
+<p>文章中使用到的图片均来源于网络</p>
+
+<p><strong>参考</strong>
+<a href="http://zh.wikipedia.org/wiki/%E8%BD%89%E8%AD%AF%E5%BE%8C%E5%82%99%E7%B7%A9%E8%A1%9D%E5%8D%80">转译后备缓冲器</a>
+<a href="book.douban.com/subject/3852290">&lt;现代操作系统&gt;</a></p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer">
+          <a href="/posts/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0-%E8%BF%90%E8%BE%93%E5%B1%82/" data-toggle="tooltip" data-placement="top" title="计算机网络笔记-运输层">&lt; Newer</a>
+      </li>
+      <li class="pager-older pager-noitem">Older &gt;</li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
