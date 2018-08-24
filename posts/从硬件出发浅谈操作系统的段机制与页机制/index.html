@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>从硬件出发，浅谈操作系统的段机制与页机制 - 无远弗届</title>
+  <meta property="og:title" content="从硬件出发，浅谈操作系统的段机制与页机制 - 无远弗届" />
+  <meta name="twitter:title" content="从硬件出发，浅谈操作系统的段机制与页机制 - 无远弗届" />
+  <meta name="description" content="我们写一个程序，经过编译之后会变成一堆的指令。操作系统在执行这个程序的时候，也正是执行这堆指令。
+指令可以是 取数据的指令 或 取下一条被执行指令 的指令。但无论是什么指令，都会进行内存的访问和寻址。就像是我们必须找到东西放在哪里，我们才能去使用它。
+
+那操作系统怎样帮我们去寻址呢？答案是 内存寻址涉及到内存的 段机制 和 页机制。
+">
+  <meta property="og:description" content="我们写一个程序，经过编译之后会变成一堆的指令。操作系统在执行这个程序的时候，也正是执行这堆指令。
+指令可以是 取数据的指令 或 取下一条被执行指令 的指令。但无论是什么指令，都会进行内存的访问和寻址。就像是我们必须找到东西放在哪里，我们才能去使用它。
+
+那操作系统怎样帮我们去寻址呢？答案是 内存寻址涉及到内存的 段机制 和 页机制。
+">
+  <meta name="twitter:description" content="我们写一个程序，经过编译之后会变成一堆的指令。操作系统在执行这个程序的时候，也正是执行这堆指令。
+指令可以是 取数据的指令 或 取下一条被执行指令 的指令。但无论是什么指令，都会进行内存的访问和寻址。就像是我们必须找到东西放在哪里，我们才能去使用它。
+
+那操作系统怎样帮我们去寻址呢？答案是 内存寻址涉及到内存的 段机制 和 页机制。
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E4%BB%8E%E7%A1%AC%E4%BB%B6%E5%87%BA%E5%8F%91%E6%B5%85%E8%B0%88%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E7%9A%84%E6%AE%B5%E6%9C%BA%E5%88%B6%E4%B8%8E%E9%A1%B5%E6%9C%BA%E5%88%B6/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">从硬件出发，浅谈操作系统的段机制与页机制</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>August 24, 2018</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/os/">
+            <i class="fas fa-folder"></i>
+            OS
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/memory-management/">
+            <i class="fas fa-tag"></i>
+            memory management
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#让我们从硬件的发展史的角度来看段机制">让我们从硬件的发展史的角度来看段机制。</a></li>
+<li><a href="#我们还需要解决小内存运行大作业的问题-页机制的引入">我们还需要解决小内存运行大作业的问题——页机制的引入</a></li>
+<li><a href="#最后">最后</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p>我们写一个程序，经过编译之后会变成一堆的指令。操作系统在执行这个程序的时候，也正是执行这堆指令。
+指令可以是 取数据的指令 或 取下一条被执行指令 的指令。但无论是什么指令，都会进行内存的访问和寻址。就像是我们必须找到东西放在哪里，我们才能去使用它。</p>
+
+<p>那操作系统怎样帮我们去寻址呢？答案是 内存寻址涉及到内存的 段机制 和 页机制。
+</p>
+
+<h3 id="让我们从硬件的发展史的角度来看段机制">让我们从硬件的发展史的角度来看段机制。</h3>
+
+<ul>
+<li>1971年，Intel 发布了第一款的微处理器<a href="https://en.wikipedia.org/wiki/Intel_4004">4004</a>。它是一个4位的微处理器。</li>
+<li>1972年，Intel 发布了第一款八位处理器<a href="https://en.wikipedia.org/wiki/Intel_8008">8008</a>。它是一个8位的微处理器，地址总线(address bus)是14位的，就是说可以访问到16K的内存空间。</li>
+<li>1974年4月，Intel 发布了第二款八位处理器<a href="https://en.wikipedia.org/wiki/Intel_8080">8080</a>。它是8008是增强版，增加了几个累加器，使它可以访问16位(8+8)的内存地址，即64K 范围内的地址空间。而且它也是公认的“第一款真正可用的微处理器”。8080的架构对8086产生了很大的影响，并且为 x86系列奠定了基础。</li>
+<li>至此，内存寻址访问仍是绝对地址。就是指令的地址即物理地址，中间没有任何的转换。</li>
+<li>1976年开始设计，1978年中旬Intel 发布了<a href="https://en.wikipedia.org/wiki/Intel_8086">8086</a>。标志了<a href="https://en.wikipedia.org/wiki/X86">x86</a>王朝的开始。它是一款16位的微处理器，却被设计成可以访问1MB 的内存（即20位的地址空间）。问题就产生了，16位的 <a href="https://en.wikipedia.org/wiki/Arithmetic_logic_unit">ALU</a>怎么去取20位的地址呢？因此，段的概念 在8086身上被引入了。</li>
+</ul>
+
+<p>段的引入是解决“ 地址总线的宽度一般要大于寄存器的宽度 ”这个问题。
+&gt; 8086的分段寻址，是指一个物理地址由段地址（segment selector）与偏移量（offset）两部分组成，长度各是16比特。其中段地址左移4位（即乘以16）与偏移量相加即为物理地址。例如，06EFh:1234h，表示段地址为06EFh,偏移量为1234h,物理地址为06EF0h + 1234h = 08124h。在计算物理地址时如果发生上溢出，8086处理器舍弃进位。例如，FFFFh：0010h所对应的物理地址为00000h.</p>
+
+<p>这种分段寻址，即 段地址+偏移量 的做法，在以80286开始之后会被称为 实模式。
+1982年，Intel 的<a href="https://en.wikipedia.org/wiki/Intel_80286#Features">80286</a>面世了。它是第一款采用 保护模式 的 x86微处理器。地址总线增加到24位使它可以访问到16M 的内存空间。即使是可访的内存空间增加了，但它的分段大小依然是64K，程序的规模受限，注定286受不到更多的喜爱。</p>
+
+<p>所以，286很快就被80386所替代了。</p>
+
+<p>1985年，Intel 发布了<a href="https://en.wikipedia.org/wiki/Intel_80386">80386</a>。一个拥有32位的微处理器。并且地址总数(address bus)也是32位的，寻址能力大幅提高到4G。同时，为了向前兼容8086，<strong>386中既有保护模式，又有实模式</strong>。并且在保护模式下，分段的大小可以到达4G(2**32)。</p>
+
+<p>现在有必要简单交代一下，实模式 与 保护模式 分别是什么了。</p>
+
+<p><strong>实模式： </strong>是 段地址+偏移量 的方式，得到物理地址，进而寻址。
+<strong>保护模式：</strong> 不允许通过段寄存器取值得到段的起始地址，而是把虚拟地址转进一个 <a href="https://en.wikipedia.org/wiki/Memory_management_unit">MMU</a> 的硬件，经过额外的转换和检查，进而得到一个物理地址。（如下图）。其中的额外检查就可以起到例如保护某段数据的作用。</p>
+
+<p><img src="/img/os_mem/pretect_mode.gif" alt="" title="图1：MMU 转换虚拟地址为物理地址" /></p>
+
+<p>是时候来一个简单的总结了。</p>
+
+<p>从4004到386，先是直接物理地址寻址，然后是 实模式 形式的寻址，最后变为 保护模式 形式寻址。
+最重要的变化是从“实模式”向“保护模式”的转变。这背后实际也是处理器的系统体系结构的变化。虽然386往后的CPU在各方面都有改进，但由于在本质上的结构没有大变化，所以386往后的处理器都统称80x86。</p>
+
+<h3 id="我们还需要解决小内存运行大作业的问题-页机制的引入">我们还需要解决小内存运行大作业的问题——页机制的引入</h3>
+
+<p>段机制抛开了实际物理内存的大小，从抽象层面提供给开发人员更大的线性空间进行程序开发。但物理内存如果不足时的情况仍需解决。</p>
+
+<p>分页，这时就被提出了。分页很好地解决了小内存的问题。</p>
+
+<p>它通过将 物理内存空间 和 线性地址空间 分成若干相等的页。（一般都为4KB）。这样整个程序就不需要连续存放在物理内存中，更可以按需把页面调进内存，而不需要把整个线性地址空间加载到内存中。正如你将会看到的，这种机制十分巧妙又实用。
+要实现分页，需要讨论的问题比分段要多，这里不过多累赘，有兴趣可以移步到<a href="http://cbsheng.github.io/2014/11/21/%E7%8E%B0%E4%BB%A3%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F-%E7%AC%94%E8%AE%B0/">《操作系统学习笔记-储存管理》</a>这篇文章阅读。</p>
+
+<h3 id="最后">最后</h3>
+
+<p>本文只是一种浅述，没有对段机制和页机制进行深入。只是从历史的角度出发，整理后扼要地介绍这两个机制。
+如果顺着这个方向进一步找书和资料会发现 Intel 的设计是越来越细致和周全的。而实际在各种不同处理器上开发操作系统又是有各种的考虑和取舍的。
+例如 Linux，它就没有用 Intel 的段机制，而是将其绕过。毕竟不是每个品牌的处理器都支持段的。</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older pager-noitem">Older &gt;</li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
