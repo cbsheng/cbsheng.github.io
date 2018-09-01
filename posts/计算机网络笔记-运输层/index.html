@@ -123,21 +123,25 @@
 
 <p>运输层协议是在端系统中而不是在网络路由器中实现的。</p>
 
-<p>运输层中，主要有以下的几个重要的知识点：
-1. 多路复用和多路分解
-2. UDP协议
-3. TCP协议
-4. TCP协议的可靠传输机制
-5. TCP协议的流量控制
-6. TCP协议的拥塞控制
-7. TCP协议的连接管理</p>
+<p>运输层中，主要有以下的几个重要的知识点：</p>
+
+<ol>
+<li>多路复用和多路分解</li>
+<li>UDP协议</li>
+<li>TCP协议</li>
+<li>TCP协议的可靠传输机制</li>
+<li>TCP协议的流量控制</li>
+<li>TCP协议的拥塞控制</li>
+<li>TCP协议的连接管理</li>
+</ol>
 
 <hr />
 
 <h1 id="1-多路复用和多路分解">1. 多路复用和多路分解</h1>
 
-<p><strong>多路复用</strong>和<strong>多路分解</strong>是所有计算机网络都需要的。
-<img src="/img/network/portsmultiplexing.png" alt="portsmultiplexing" /></p>
+<p><strong>多路复用</strong>和<strong>多路分解</strong>是所有计算机网络都需要的。</p>
+
+<p><img src="/img/network/portsmultiplexing.png" alt="portsmultiplexing" /></p>
 
 <blockquote>
 <p><strong>多路分解</strong>是将在运输层收到的报文段中的数据交付到正确的套接字的工作。
@@ -162,8 +166,11 @@
 <p><strong>正是因为TCP是面向连接的，所以需要四个值来标识。</strong>不同客户机里面的不同进程都可以跟服务器的一个特定的服务进程建立各自的一条连接。而这每一条连接的两端的套接字都是以四个值进行标识的。
 服务器关注连接请求报文段里的这四个值，新创建的连接套接字通过四个值来标识。所有后续到达的报文段，如果它们这四个值都匹配，则被多路分解到这个套接字。</p>
 
-<p><strong>WEB服务器与TCP</strong>：
-&gt; 连接套接字与进程之间并非总是有着一一对应的关系。事实上，当今的高性能WEB服务器通常只使用一个进程，但是为每个新的客户机连接创建一个具有新连接的套接字的新线程。</p>
+<p><strong>WEB服务器与TCP</strong>：</p>
+
+<blockquote>
+<p>连接套接字与进程之间并非总是有着一一对应的关系。事实上，当今的高性能WEB服务器通常只使用一个进程，但是为每个新的客户机连接创建一个具有新连接的套接字的新线程。</p>
+</blockquote>
 
 <hr />
 
@@ -171,27 +178,36 @@
 
 <p>UDP其实就是在网络层协议上增加了一点多路复用和多路分解服务以及差错检测功能。</p>
 
-<p>UDP报文结构：
-<img src="/img/network/udp.jpg" alt="UDP" />
-<strong>注意</strong>，图中的蓝色部分的两个源端口是错误的。正确的是先从左往右：源端口、目的端口。
+<p>UDP报文结构：</p>
+
+<p><img src="/img/network/udp.jpg" alt="UDP" /></p>
+
+<p><strong>注意</strong>，图中的蓝色部分的两个源端口是错误的。正确的是先从左往右：源端口、目的端口。
 UDP报文首部真正只具有四个字段，每个字段只有2个字节，所以一共是8个字节。黄色部分的<strong>伪首部</strong>是用于求检验和字段的。
 在计算检验和的时，在UDP用户数据报前增加12个字节的伪首部。<strong>伪首部既不向下传送也不向上递交，仅仅是为了计算检验和</strong>。
 UDP的差错检测是包括数据部分，与IP只检测首部是不同的。</p>
 
-<p>UDP的检验和求法采用的是IP的<strong>16位的反码求和</strong>。若UDP用户数据报的数据部分不是偶数个字节则填入一个全零字节（这个字节不发送），在接收方，对收到UDP数据报进行16位的反码求和，得到结果如果为全1则无差错。虽然UDP提供差错检测，但不提供差错恢复。
-<img src="/img/network/udpchecksum.jpeg" alt="UDP Checksum" /></p>
+<p>UDP的检验和求法采用的是IP的<strong>16位的反码求和</strong>。若UDP用户数据报的数据部分不是偶数个字节则填入一个全零字节（这个字节不发送），在接收方，对收到UDP数据报进行16位的反码求和，得到结果如果为全1则无差错。虽然UDP提供差错检测，但不提供差错恢复。</p>
 
-<p>UDP的特点：
-1. UDP是<strong>无连接的</strong>，<strong>面向报文的</strong>。
-2. UDP是<strong>尽最大努力交付</strong>。
-3. UDP<strong>没有拥塞控制</strong>，可能会导致发送放和接收方之间的高丢包率，并挤垮TCP会话，这是一个潜在的严重问题。
-4. UDP<strong>首部开销小</strong>，只有8个字节。</p>
+<p><img src="/img/network/udpchecksum.jpeg" alt="UDP Checksum" /></p>
 
-<p>UDP的注意点：
-1. UDP的检验和是<strong>可选的</strong>。
-2. UDP的加伪首部去计算检验和的目的<strong>确认数据是否正确到达目的地</strong>（IP没有接受地址不是本主机的数据和IP没有把应传送给另一高层的数据报传给UDP）。
-3. UDP的检验和计算出来全是0的话，就往检验和字段填充全1，这是在二进制反码计算中是等效的。但如果该字段全0则说明发送端没有做计算。
-4. 如果UDP数据报有错，会被<strong>悄悄地</strong>丢弃。</p>
+<p>UDP的特点：</p>
+
+<ol>
+<li>UDP是<strong>无连接的</strong>，<strong>面向报文的</strong>。</li>
+<li>UDP是<strong>尽最大努力交付</strong>。</li>
+<li>UDP<strong>没有拥塞控制</strong>，可能会导致发送放和接收方之间的高丢包率，并挤垮TCP会话，这是一个潜在的严重问题。</li>
+<li>UDP<strong>首部开销小</strong>，只有8个字节。</li>
+</ol>
+
+<p>UDP的注意点：</p>
+
+<ol>
+<li>UDP的检验和是<strong>可选的</strong>。</li>
+<li>UDP的加伪首部去计算检验和的目的<strong>确认数据是否正确到达目的地</strong>（IP没有接受地址不是本主机的数据和IP没有把应传送给另一高层的数据报传给UDP）。</li>
+<li>UDP的检验和计算出来全是0的话，就往检验和字段填充全1，这是在二进制反码计算中是等效的。但如果该字段全0则说明发送端没有做计算。</li>
+<li>如果UDP数据报有错，会被<strong>悄悄地</strong>丢弃。</li>
+</ol>
 
 <p>虽然UDP是无连接，不可靠的协议。但是其占用资源小，速度快，实时性强等优点还是受到很多应用利用。</p>
 
@@ -202,8 +218,9 @@ UDP的差错检测是包括数据部分，与IP只检测首部是不同的。</p
 <p>TCP协议是<strong>面向连接</strong>，<strong>提供可靠交付服务</strong>，<strong>提供全双工通信</strong>，<strong>面向字节流</strong>的。
 <strong>面向连接</strong>是指通信前会在两个主机两个不同的通信进程之间建立一条虚拟的连接（逻辑连接）。</p>
 
-<p>TCP报文结构：
-<img src="/img/network/TCP.jpg" alt="TCP" /></p>
+<p>TCP报文结构：</p>
+
+<p><img src="/img/network/TCP.jpg" alt="TCP" /></p>
 
 <p><strong>源端口或目的端口（分别2个字节）</strong>：略。
 <strong>序号（4个字节）</strong>：TCP连接中传送的字节流中的<strong>每一个字节都按顺序编号</strong>。传送的字节流的起始序号必须在连接建立时设置。首部中的序号字段值的是本报文段所发送的数据的第一个字节的序号。例如一报文段序号值为101，数据共有100字节，那么下一报文段序号值就为201。因为序号的大小是[0,2^32 -1],超出了循环从0开始，所以序号是使用mod2^32运算的。
@@ -225,11 +242,14 @@ UDP的差错检测是包括数据部分，与IP只检测首部是不同的。</p
 
 <h1 id="4-tcp协议的可靠传输机制">4. TCP协议的可靠传输机制</h1>
 
-<p>TCP协议的可靠传输机制主要依靠：
-1. 报文确认
-2. 超时重传
-3. 快速重传
-4. 差错恢复</p>
+<p>TCP协议的可靠传输机制主要依靠：</p>
+
+<ol>
+<li>报文确认</li>
+<li>超时重传</li>
+<li>快速重传</li>
+<li>差错恢复</li>
+</ol>
 
 <h3 id="报文确认">报文确认</h3>
 
@@ -245,13 +265,19 @@ UDP的差错检测是包括数据部分，与IP只检测首部是不同的。</p
 TCP采用的是自适应的方法。设<strong>SampleRTT</strong>为样本RTT，就是从某报文被发出（即交给IP）到对该报文段的确认被收到之间的时间量。
 在任意时刻只为一个已发送但未被确认的报文段估测量，并且<strong>仅为传输一次的报文段测量SampleRTT</strong>。</p>
 
-<p>可是SampleRTT的值会因为网络的拥塞情况而不段的变化，所以需要一个均值<strong>EstimatedRTT</strong>：
-&gt; SampleRTT = (1-a) * EstimatedRTT + a * SampleRTTs</p>
+<p>可是SampleRTT的值会因为网络的拥塞情况而不段的变化，所以需要一个均值<strong>EstimatedRTT</strong>：</p>
+
+<blockquote>
+<p>SampleRTT = (1-a) * EstimatedRTT + a * SampleRTTs</p>
+</blockquote>
 
 <p><a href="https://tools.ietf.org/html/rfc2988">RFC 2988</a>中给出a参考值是0.125。从统计学观点来说，这种平均被称为<strong>指数加权移动平均</strong>。</p>
 
-<p>另外，测量RTT的变化也是有意义的。所以<a href="https://tools.ietf.org/html/rfc2988">RFC 2988</a>定义了RTT偏差<strong>DevRTT</strong>。
-&gt; DevRTT = (1-b) * DevRTT + b * |SampleRTT - EstimatedRTT|</p>
+<p>另外，测量RTT的变化也是有意义的。所以<a href="https://tools.ietf.org/html/rfc2988">RFC 2988</a>定义了RTT偏差<strong>DevRTT</strong>。</p>
+
+<blockquote>
+<p>DevRTT = (1-b) * DevRTT + b * |SampleRTT - EstimatedRTT|</p>
+</blockquote>
 
 <p>超时间隔应该是等于大于均值的，而超过的均值的范围值可以利用DevRTT。所以超时间间隔的公式就为：
 &gt; TimeoutInterval = EstimatedRTT + 4 * DevRTT</p>
@@ -300,9 +326,11 @@ TCP采用的是自适应的方法。设<strong>SampleRTT</strong>为样本RTT，
 
 <p>由于接收方接收了分组就发送ACK，移动自身的接收窗口，而发送方有可能因为ACK丢失等原因迟迟没收到确认报文以至于窗口不移动。所以，<strong>对于SR协议而言，这就意味着发送方和接收方的窗口并不总是一致</strong>。</p>
 
-<p>对于SR协议而言，<strong>窗口的长度必须小于或等于序号空间大小的一半</strong>。因为序号空间是有限的，必须是循环利用的。假如序号空间总大为4，那么4之后会从0循环开始。当窗口大小大于序号空间的一半时，就有可能会出现接收方接收到一个分组到来是<strong>不能判断得到这个分组是一个新的分组抑或是一个重传</strong>。
-<img src="/img/network/SR.png" alt="SR" />
-可以看到当发送方发送的是重传分组时，接收方是无法判别的。</p>
+<p>对于SR协议而言，<strong>窗口的长度必须小于或等于序号空间大小的一半</strong>。因为序号空间是有限的，必须是循环利用的。假如序号空间总大为4，那么4之后会从0循环开始。当窗口大小大于序号空间的一半时，就有可能会出现接收方接收到一个分组到来是<strong>不能判断得到这个分组是一个新的分组抑或是一个重传</strong>。</p>
+
+<p><img src="/img/network/SR.png" alt="SR" /></p>
+
+<p>可以看到当发送方发送的是重传分组时，接收方是无法判别的。</p>
 
 <p>当<strong>窗口的长度必须小于或等于序号空间大小的一半</strong>时，前面重传的数据报到达时会被丢弃，因为它的序号不在窗口内。但这里其实有个疑问，2^32大小的序号空间加上流量窗口和拥塞窗口，像<strong>不能判断得到这个分组是一个新的分组抑或是一个重传</strong>这种情况发生的概率大吗？</p>
 
@@ -315,18 +343,26 @@ TCP采用的是自适应的方法。设<strong>SampleRTT</strong>为样本RTT，
 
 <p>TCP协议报文结构中的<strong>窗口</strong>字段就是用于流量控制的。</p>
 
-<p>首先先来定义几个变量标识：
-* <strong>LastByteRead</strong> : 接收方的应用程序从缓存中读出的最后一个字节编号
-* <strong>LastByteRcvd</strong> : 从网络到达接收方缓存中的最后一个字节
-* <strong>RcvBuffer</strong> : 接收方缓存大小
-* <strong>RcvWindow</strong> : 接收方的接收窗口大小
-* <strong>LastByteSent</strong> : 发送方最后发送的字节编号
-* <strong>LastByteAcked</strong> : 发送方最后接收到ACK的字节编号</p>
+<p>首先先来定义几个变量标识：</p>
 
-<p>由上面的变量可以得出以下的关系式：
-&gt; * LastByteRcvd - LastByteRead &lt;= RcvBuffer
-&gt; * RevWindow = RcvBuffer - ( LastByteRcvd - LastByteRead )
-&gt; * LastByteSent - LastByteAcked &lt;= RevWindow</p>
+<ul>
+<li><strong>LastByteRead</strong> : 接收方的应用程序从缓存中读出的最后一个字节编号</li>
+<li><strong>LastByteRcvd</strong> : 从网络到达接收方缓存中的最后一个字节</li>
+<li><strong>RcvBuffer</strong> : 接收方缓存大小</li>
+<li><strong>RcvWindow</strong> : 接收方的接收窗口大小</li>
+<li><strong>LastByteSent</strong> : 发送方最后发送的字节编号</li>
+<li><strong>LastByteAcked</strong> : 发送方最后接收到ACK的字节编号</li>
+</ul>
+
+<p>由上面的变量可以得出以下的关系式：</p>
+
+<blockquote>
+<ul>
+<li>LastByteRcvd - LastByteRead &lt;= RcvBuffer</li>
+<li>RevWindow = RcvBuffer - ( LastByteRcvd - LastByteRead )</li>
+<li>LastByteSent - LastByteAcked &lt;= RevWindow</li>
+</ul>
+</blockquote>
 
 <p>所以是要将发送方的<strong>已发送未确认</strong>的分组控制在接收方给出的窗口大小内。考虑到当接收方返回的window值为0时，发送方就不能再进行发送，而发送方不进行发送，当接收方有缓存窗口不为零就无法得知，因为<strong>接收方不会主动推送窗口值</strong>。所以TCP规定，当发送方收到窗口值为0时的报文，就本地开启一个<strong>计时器</strong>，时间一到就主动地去发送一个<strong>只有一字节的探测报文段</strong>，这时候接收方就把新的窗口值加上去ACK报文段进行返回。</p>
 
@@ -348,16 +384,23 @@ TCP采用的是自适应的方法。设<strong>SampleRTT</strong>为样本RTT，
 
 <p>TCP拥塞控制机制让连接的每一端都记录一个额外的变量，即<strong>拥塞窗口</strong>，表示为<strong>CongWin(以字节为单位)</strong>。它对一个TCP发送方能向网络中发送流量的速率进行了限制。</p>
 
-<p>结合在TCP中的流量控制RcvWindow。可以得到：
-&gt; LastByteSent - LastByteAcked &lt;= min( CongWin, RcvWindow)
-在一个发送方中未被确认的数据量不会超过CongWin和RcvWindow中的最小值。</p>
+<p>结合在TCP中的流量控制RcvWindow。可以得到：</p>
+
+<blockquote>
+<p>LastByteSent - LastByteAcked &lt;= min( CongWin, RcvWindow)</p>
+</blockquote>
+
+<p>在一个发送方中未被确认的数据量不会超过CongWin和RcvWindow中的最小值。</p>
 
 <h3 id="在拥塞控制中-采用的是什么算法进行调整发送的速率">在拥塞控制中，采用的是什么算法进行调整发送的速率？</h3>
 
-<p>TCP拥塞控制算法有：
-1. 加性增(additive-increase),乘性减(multiplicative-decrease)
-2. 慢启动(slow start)
-3. 对超时事件作出反应</p>
+<p>TCP拥塞控制算法有：</p>
+
+<ol>
+<li>加性增(additive-increase),乘性减(multiplicative-decrease)</li>
+<li>慢启动(slow start)</li>
+<li>对超时事件作出反应</li>
+</ol>
 
 <h3 id="加性增-additive-increase-乘性减-multiplicative-decrease">加性增(additive-increase),乘性减(multiplicative-decrease)</h3>
 
@@ -370,8 +413,9 @@ TCP采用的是自适应的方法。设<strong>SampleRTT</strong>为样本RTT，
 <h3 id="慢启动-slow-start">慢启动(slow start)</h3>
 
 <p>TCP连接开始时，CongWin的值初始为1。但发送方在初始阶段不是线性地增长的，而是以指数的形式。即每收到一个ACK，CongWin就会增加一个MSS。<strong>（CongWin=CongWin+MSS）</strong>
-当<strong>CongWin&gt;Threshold(阀值)</strong>时，TCP就会由慢启动的状态转换到拥塞避免。
-<img src="/img/network/slowstart.jpeg" alt="slow start" /></p>
+当<strong>CongWin&gt;Threshold(阀值)</strong>时，TCP就会由慢启动的状态转换到拥塞避免。</p>
+
+<p><img src="/img/network/slowstart.jpeg" alt="slow start" /></p>
 
 <h3 id="3-对超时事件作出反应">3. 对超时事件作出反应</h3>
 
@@ -412,17 +456,22 @@ ss或ca | 超时 | Threshold=CongWin/2,CongWin=1MSS，然后状态变为<strong>
 
 <h2 id="释放连接">释放连接</h2>
 
-<p>TCP释放连接是通过<strong>四次挥手</strong>。
-<img src="/img/network/TCPfour-way handshake.png" alt="TCP four-way handshake" /></p>
+<p>TCP释放连接是通过<strong>四次挥手</strong>。</p>
+
+<p><img src="/img/network/TCPfour-way handshake.png" alt="TCP four-way handshake" /></p>
 
 <p>如图所示，客户端应用进程发出一个关闭连接命令。这会引起客户端TCP向服务端进程发送一个特殊的TCP报文段。这个特色的报文段首部中的<strong>FIN</strong>比特被置1。当服务接收到该报文段后，就向客户端会送一个确认报文段。这时，TCP连接处于<strong>半关闭状态</strong>。半关闭指的是客户端已经不能再给服务端发送数据了，但可以接收服务端发过来的数据。数据传送完毕之后，服务端发送其终止报文段，同样<strong>FIN</strong>被置1。最后客户端对这个服务端的终止报文段进行确认。两台主机的TCP连接成功释放。
 <strong>注意</strong>，如果服务端不需要向客户端传输数据了，那么ack=u+1的这个两个报文是可以结合为一个的。</p>
 
 <p><strong>为什么客户端最后需要等待2MSL呢？</strong>
-解释一下，MSL意思是报文段最大生存时间(Maximum Segment Lifetime)。它是任何报文段被丢弃前在网络内的最长时间。因为网络层有限制生存时间字段TTL，所以MSL值是有限的，常用可能会30秒，1分钟，2分钟。
-1. 为了保证服务端能够接收到客户端的确认报文段，因为服务端在规定时间内收不到会进行重发。
-2. 经过2MSL之后可以使本连接持续的时间内产生的所有报文都从网络中消失。
-所以，服务端关闭连接要比客户端要快。</p>
+解释一下，MSL意思是报文段最大生存时间(Maximum Segment Lifetime)。它是任何报文段被丢弃前在网络内的最长时间。因为网络层有限制生存时间字段TTL，所以MSL值是有限的，常用可能会30秒，1分钟，2分钟。</p>
+
+<ol>
+<li>为了保证服务端能够接收到客户端的确认报文段，因为服务端在规定时间内收不到会进行重发。</li>
+<li>经过2MSL之后可以使本连接持续的时间内产生的所有报文都从网络中消失。</li>
+</ol>
+
+<p>所以，服务端关闭连接要比客户端要快。</p>
 
 <p>关于2MSL还有别的有趣事情，可以参考<a href="http://localhost:4000/2015/08/06/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B02-%E8%BF%90%E8%BE%93%E5%B1%82/">&lt;&lt;计算机网络笔记2-运输层&gt;&gt;</a>。</p>
 

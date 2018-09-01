@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>通过断点跟踪探索Vue响应原理 - 无远弗届</title>
+  <meta property="og:title" content="通过断点跟踪探索Vue响应原理 - 无远弗届" />
+  <meta name="twitter:title" content="通过断点跟踪探索Vue响应原理 - 无远弗届" />
+  <meta name="description" content="
+基于版本2.5.2源码分析
+
+
+响应原理
+
+
+Object.defineProperty()
+观察者模式
+
+
+">
+  <meta property="og:description" content="
+基于版本2.5.2源码分析
+
+
+响应原理
+
+
+Object.defineProperty()
+观察者模式
+
+
+">
+  <meta name="twitter:description" content="
+基于版本2.5.2源码分析
+
+
+响应原理
+
+
+Object.defineProperty()
+观察者模式
+
+
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">通过断点跟踪探索Vue响应原理</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>September 1, 2018</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/vue/">
+            <i class="fas fa-folder"></i>
+            Vue
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E5%89%8D%E7%AB%AF/">
+            <i class="fas fa-folder"></i>
+            前端
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/vue/">
+            <i class="fas fa-tag"></i>
+            Vue
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-tag"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#响应原理">响应原理</a></li>
+<li><a href="#响应原理的探索">响应原理的探索</a>
+<ul>
+<li><a href="#测试工程代码">测试工程代码</a></li>
+<li><a href="#运行效果">运行效果</a></li>
+</ul></li>
+<li><a href="#vue对观察者模式的实现">Vue对观察者模式的实现</a></li>
+<li><a href="#断点调试的方式跟踪源码">断点调试的方式跟踪源码</a>
+<ul>
+<li><a href="#vm-data-https-vuejs-org-v2-api-data-里的数据如何被监听变化的"><a href="https://vuejs.org/v2/api/#data">vm.$data</a>里的数据如何被监听变化的？</a></li>
+<li><a href="#computed属性如何被监听的">computed属性如何被监听的？</a></li>
+<li><a href="#watch-https-vuejs-org-v2-api-watch-是如何实现的"><a href="https://vuejs.org/v2/api/#watch">watch</a>是如何实现的？</a></li>
+</ul></li>
+<li><a href="#总结">总结</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <blockquote>
+<p>基于版本2.5.2源码分析</p>
+</blockquote>
+
+<h3 id="响应原理">响应原理</h3>
+
+<ol>
+<li><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty">Object.defineProperty()</a></li>
+<li><a href="https://en.wikipedia.org/wiki/Observer_pattern">观察者模式</a></li>
+</ol>
+
+<p></p>
+
+<h3 id="响应原理的探索">响应原理的探索</h3>
+
+<p>文章对于Vue原理的探索基于下面的测试工程，结合浏览器断点跟踪堆栈的方式阅读源码。</p>
+
+<h4 id="测试工程代码">测试工程代码</h4>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="p">&lt;</span><span class="nt">template</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&#34;app&#34;</span><span class="p">&gt;</span>
+    {{ num }}
+    <span class="p">&lt;</span><span class="nt">button</span> <span class="err">@</span><span class="na">click</span><span class="o">=</span><span class="s">&#34;click&#34;</span><span class="p">&gt;</span>+1<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">template</span><span class="p">&gt;</span>
+
+<span class="p">&lt;</span><span class="nt">script</span><span class="p">&gt;</span>
+<span class="k">export</span> <span class="k">default</span> <span class="p">{</span>
+  <span class="nx">name</span><span class="o">:</span> <span class="s1">&#39;app&#39;</span><span class="p">,</span>
+  <span class="nx">data</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">{</span>
+      <span class="nx">num</span><span class="o">:</span> <span class="mi">1</span>
+    <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="nx">methods</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">click</span> <span class="p">()</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">num</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+<span class="p">&lt;/</span><span class="nt">script</span><span class="p">&gt;</span></code></pre></td></tr></table>
+</div>
+</div>
+<h4 id="运行效果">运行效果</h4>
+
+<p><img src="/img/vue/test_project.gif" alt="test_project" /></p>
+
+<h3 id="vue对观察者模式的实现">Vue对观察者模式的实现</h3>
+
+<p>核心三个类：<a href="https://github.com/vuejs/vue/blob/471de4a31d229e681cc9dce18632b5bcab944c77/src/core/observer/index.js#L35">Observer</a>、<a href="https://github.com/vuejs/vue/blob/471de4a31d229e681cc9dce18632b5bcab944c77/src/core/observer/dep.js#L12">Dep</a>、<a href="https://github.com/vuejs/vue/blob/471de4a31d229e681cc9dce18632b5bcab944c77/src/core/observer/watcher.js#L24">Watcher</a></p>
+
+<p>开始时，需要通过Observer类将数据转换成可被观察的对象。</p>
+
+<p>Observer类的构造方法里通过this.walk()和this.observeArray()方法，间接地调用了Object.defineProperty()，Object.defineProperty()参数中的getter方法会使用一个new Dep()的闭包实例对象，该实例主要用于依赖收集（即收集Watcher实例）。</p>
+
+<blockquote>
+<p>所以每个可被观察的对象都与一个Dep类实例绑定在一起，一对一关系</p>
+</blockquote>
+
+<p>例如Vue会对this.num转换成一个可被观察的对象，将一个闭包的Dep实例注入到this.num的getter方法里。当this.num被读取值时，<strong>并且有Watcher实例</strong>，就会收集依赖，将该Watcher实例与闭包的Dep实例相互引用。这样，只要当this.num的setter方法被调用时，就可通过闭包的Dep实例通知所有的Watcher实例执行一个回调。</p>
+
+<blockquote>
+<p>Dep类实例和Watcher实例关系是多对多</p>
+</blockquote>
+
+<p>这三个类之间的通信过程如下：</p>
+
+<ol>
+<li>将数据A通过Observer类转换成一个可被观察的对象。</li>
+<li>改写数据A的getter和setter方法，并在getter方法里，嵌入一个闭包对象Dep类实例。</li>
+<li>对数据A感兴趣的数据B创建一个Watcher类实例，把数据A的读取方式（可能function或字符串）当成参数传进Watcher类。</li>
+<li>Watcher类构造实例时，先将自己放到全局的Dep.target上，然后读取数据A，触发数据A的getter方法。</li>
+<li>数据A getter方法里检查到Dep.target有值，收集依赖Watcher实例。</li>
+<li>那以后数据A只要有值被更新，即调用setter方法，就能通知到所有依赖的Watcher实例。</li>
+</ol>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="c1">// Observer 类
+</span><span class="c1"></span><span class="k">export</span> <span class="k">class</span> <span class="nx">Observer</span> <span class="p">{</span>
+  <span class="nx">value</span><span class="o">:</span> <span class="nx">any</span><span class="p">;</span>
+  <span class="nx">dep</span><span class="o">:</span> <span class="nx">Dep</span><span class="p">;</span>
+  <span class="nx">vmCount</span><span class="o">:</span> <span class="nx">number</span><span class="p">;</span> <span class="c1">// number of vms that has this object as root $data
+</span><span class="c1"></span>
+  <span class="c1">// Observer的构造器
+</span><span class="c1"></span>  <span class="nx">constructor</span> <span class="p">(</span><span class="nx">value</span><span class="o">:</span> <span class="nx">any</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">value</span> <span class="o">=</span> <span class="nx">value</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">dep</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Dep</span><span class="p">()</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">vmCount</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="nx">def</span><span class="p">(</span><span class="nx">value</span><span class="p">,</span> <span class="s1">&#39;__ob__&#39;</span><span class="p">,</span> <span class="k">this</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nb">Array</span><span class="p">.</span><span class="nx">isArray</span><span class="p">(</span><span class="nx">value</span><span class="p">))</span> <span class="p">{</span>
+      <span class="k">const</span> <span class="nx">augment</span> <span class="o">=</span> <span class="nx">hasProto</span>
+        <span class="o">?</span> <span class="nx">protoAugment</span>
+        <span class="o">:</span> <span class="nx">copyAugment</span>
+      <span class="nx">augment</span><span class="p">(</span><span class="nx">value</span><span class="p">,</span> <span class="nx">arrayMethods</span><span class="p">,</span> <span class="nx">arrayKeys</span><span class="p">)</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">observeArray</span><span class="p">(</span><span class="nx">value</span><span class="p">)</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">walk</span><span class="p">(</span><span class="nx">value</span><span class="p">)</span> <span class="c1">// 内部调用defineReactive方法
+</span><span class="c1"></span>    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div><div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="c1">// defineReactive 方法
+</span><span class="c1"></span><span class="cm">/**
+</span><span class="cm"> * Define a reactive property on an Object.
+</span><span class="cm"> */</span>
+<span class="k">export</span> <span class="kd">function</span> <span class="nx">defineReactive</span> <span class="p">(</span>
+  <span class="nx">obj</span><span class="o">:</span> <span class="nb">Object</span><span class="p">,</span>
+  <span class="nx">key</span><span class="o">:</span> <span class="nx">string</span><span class="p">,</span>
+  <span class="nx">val</span><span class="o">:</span> <span class="nx">any</span><span class="p">,</span>
+  <span class="nx">customSetter</span><span class="o">?:</span> <span class="o">?</span><span class="nb">Function</span><span class="p">,</span>
+  <span class="nx">shallow</span><span class="o">?:</span> <span class="kr">boolean</span>
+<span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// 闭包的Dep类实例
+</span><span class="c1"></span>  <span class="k">const</span> <span class="nx">dep</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Dep</span><span class="p">()</span>
+
+  <span class="c1">// 省略部分代码
+</span><span class="c1"></span>
+  <span class="kd">let</span> <span class="nx">childOb</span> <span class="o">=</span> <span class="o">!</span><span class="nx">shallow</span> <span class="o">&amp;&amp;</span> <span class="nx">observe</span><span class="p">(</span><span class="nx">val</span><span class="p">)</span>
+  <span class="nb">Object</span><span class="p">.</span><span class="nx">defineProperty</span><span class="p">(</span><span class="nx">obj</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="p">{</span>
+    <span class="nx">enumerable</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="nx">configurable</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="nx">get</span><span class="o">:</span> <span class="kd">function</span> <span class="nx">reactiveGetter</span> <span class="p">()</span> <span class="p">{</span>
+      <span class="k">const</span> <span class="nx">value</span> <span class="o">=</span> <span class="nx">getter</span> <span class="o">?</span> <span class="nx">getter</span><span class="p">.</span><span class="nx">call</span><span class="p">(</span><span class="nx">obj</span><span class="p">)</span> <span class="o">:</span> <span class="nx">val</span>
+      <span class="c1">// Dep.target 不为null，即有Watcher实例
+</span><span class="c1"></span>      <span class="k">if</span> <span class="p">(</span><span class="nx">Dep</span><span class="p">.</span><span class="nx">target</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// 这里就是收集依赖的地方
+</span><span class="c1"></span>        <span class="nx">dep</span><span class="p">.</span><span class="nx">depend</span><span class="p">()</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nx">childOb</span><span class="p">)</span> <span class="p">{</span>
+          <span class="nx">childOb</span><span class="p">.</span><span class="nx">dep</span><span class="p">.</span><span class="nx">depend</span><span class="p">()</span>
+          <span class="k">if</span> <span class="p">(</span><span class="nb">Array</span><span class="p">.</span><span class="nx">isArray</span><span class="p">(</span><span class="nx">value</span><span class="p">))</span> <span class="p">{</span>
+            <span class="nx">dependArray</span><span class="p">(</span><span class="nx">value</span><span class="p">)</span>
+          <span class="p">}</span>
+        <span class="p">}</span>
+      <span class="p">}</span>
+      <span class="k">return</span> <span class="nx">value</span>
+    <span class="p">},</span>
+    <span class="nx">set</span><span class="o">:</span> <span class="kd">function</span> <span class="nx">reactiveSetter</span> <span class="p">(</span><span class="nx">newVal</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">const</span> <span class="nx">value</span> <span class="o">=</span> <span class="nx">getter</span> <span class="o">?</span> <span class="nx">getter</span><span class="p">.</span><span class="nx">call</span><span class="p">(</span><span class="nx">obj</span><span class="p">)</span> <span class="o">:</span> <span class="nx">val</span>
+      <span class="cm">/* eslint-disable no-self-compare */</span>
+      <span class="k">if</span> <span class="p">(</span><span class="nx">newVal</span> <span class="o">===</span> <span class="nx">value</span> <span class="o">||</span> <span class="p">(</span><span class="nx">newVal</span> <span class="o">!==</span> <span class="nx">newVal</span> <span class="o">&amp;&amp;</span> <span class="nx">value</span> <span class="o">!==</span> <span class="nx">value</span><span class="p">))</span> <span class="p">{</span>
+        <span class="k">return</span>
+      <span class="p">}</span>
+      <span class="cm">/* eslint-enable no-self-compare */</span>
+      <span class="k">if</span> <span class="p">(</span><span class="nx">process</span><span class="p">.</span><span class="nx">env</span><span class="p">.</span><span class="nx">NODE_ENV</span> <span class="o">!==</span> <span class="s1">&#39;production&#39;</span> <span class="o">&amp;&amp;</span> <span class="nx">customSetter</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">customSetter</span><span class="p">()</span>
+      <span class="p">}</span>
+      <span class="k">if</span> <span class="p">(</span><span class="nx">setter</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">setter</span><span class="p">.</span><span class="nx">call</span><span class="p">(</span><span class="nx">obj</span><span class="p">,</span> <span class="nx">newVal</span><span class="p">)</span>
+      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="nx">val</span> <span class="o">=</span> <span class="nx">newVal</span>
+      <span class="p">}</span>
+      <span class="nx">childOb</span> <span class="o">=</span> <span class="o">!</span><span class="nx">shallow</span> <span class="o">&amp;&amp;</span> <span class="nx">observe</span><span class="p">(</span><span class="nx">newVal</span><span class="p">)</span>
+      <span class="c1">// 通知所有依赖，执行回调
+</span><span class="c1"></span>      <span class="nx">dep</span><span class="p">.</span><span class="nx">notify</span><span class="p">()</span>
+    <span class="p">}</span>
+  <span class="p">})</span>
+<span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div><div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="c1">// Dep 类
+</span><span class="c1"></span><span class="k">export</span> <span class="k">default</span> <span class="k">class</span> <span class="nx">Dep</span> <span class="p">{</span>
+   <span class="nx">target</span><span class="o">:</span> <span class="o">?</span><span class="nx">Watcher</span><span class="p">;</span>
+  <span class="nx">id</span><span class="o">:</span> <span class="nx">number</span><span class="p">;</span>
+  <span class="nx">subs</span><span class="o">:</span> <span class="nb">Array</span><span class="o">&lt;</span><span class="nx">Watcher</span><span class="o">&gt;</span><span class="p">;</span>
+
+  <span class="c1">// 省略部分代码
+</span><span class="c1"></span>
+  <span class="c1">// 与Watcher实例互相引用
+</span><span class="c1"></span>  <span class="nx">depend</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">Dep</span><span class="p">.</span><span class="nx">target</span><span class="p">)</span> <span class="p">{</span>
+      <span class="nx">Dep</span><span class="p">.</span><span class="nx">target</span><span class="p">.</span><span class="nx">addDep</span><span class="p">(</span><span class="k">this</span><span class="p">)</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+
+  <span class="c1">// 调用所有Watcher的update方法，触发Watcher的回调
+</span><span class="c1"></span>  <span class="nx">notify</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="c1">// stabilize the subscriber list first
+</span><span class="c1"></span>    <span class="k">const</span> <span class="nx">subs</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">subs</span><span class="p">.</span><span class="nx">slice</span><span class="p">()</span>
+    <span class="k">for</span> <span class="p">(</span><span class="kd">let</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">l</span> <span class="o">=</span> <span class="nx">subs</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span> <span class="o">&lt;</span> <span class="nx">l</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+      <span class="nx">subs</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">update</span><span class="p">()</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div><div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span><span class="lnt">60
+</span><span class="lnt">61
+</span><span class="lnt">62
+</span><span class="lnt">63
+</span><span class="lnt">64
+</span><span class="lnt">65
+</span><span class="lnt">66
+</span><span class="lnt">67
+</span><span class="lnt">68
+</span><span class="lnt">69
+</span><span class="lnt">70
+</span><span class="lnt">71
+</span><span class="lnt">72
+</span><span class="lnt">73
+</span><span class="lnt">74
+</span><span class="lnt">75
+</span><span class="lnt">76
+</span><span class="lnt">77
+</span><span class="lnt">78
+</span><span class="lnt">79
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="c1">// Watcher 类
+</span><span class="c1"></span><span class="k">export</span> <span class="k">default</span> <span class="k">class</span> <span class="nx">Watcher</span> <span class="p">{</span>
+  <span class="c1">// 省略部分代码
+</span><span class="c1"></span>
+  <span class="nx">constructor</span> <span class="p">(</span>
+    <span class="nx">vm</span><span class="o">:</span> <span class="nx">Component</span><span class="p">,</span>
+    <span class="nx">expOrFn</span><span class="o">:</span> <span class="nx">string</span> <span class="o">|</span> <span class="nb">Function</span><span class="p">,</span>
+    <span class="nx">cb</span><span class="o">:</span> <span class="nb">Function</span><span class="p">,</span>
+    <span class="nx">options</span><span class="o">?:</span> <span class="nb">Object</span>
+  <span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// 省略部分代码
+</span><span class="c1"></span>
+    <span class="c1">// parse expression for getter
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="k">typeof</span> <span class="nx">expOrFn</span> <span class="o">===</span> <span class="s1">&#39;function&#39;</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">getter</span> <span class="o">=</span> <span class="nx">expOrFn</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">getter</span> <span class="o">=</span> <span class="nx">parsePath</span><span class="p">(</span><span class="nx">expOrFn</span><span class="p">)</span>
+      <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="k">this</span><span class="p">.</span><span class="nx">getter</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">this</span><span class="p">.</span><span class="nx">getter</span> <span class="o">=</span> <span class="kd">function</span> <span class="p">()</span> <span class="p">{}</span>
+        <span class="nx">process</span><span class="p">.</span><span class="nx">env</span><span class="p">.</span><span class="nx">NODE_ENV</span> <span class="o">!==</span> <span class="s1">&#39;production&#39;</span> <span class="o">&amp;&amp;</span> <span class="nx">warn</span><span class="p">(</span>
+          <span class="sb">`Failed watching path: &#34;</span><span class="si">${</span><span class="nx">expOrFn</span><span class="si">}</span><span class="sb">&#34; `</span> <span class="o">+</span>
+          <span class="s1">&#39;Watcher only accepts simple dot-delimited paths. &#39;</span> <span class="o">+</span>
+          <span class="s1">&#39;For full control, use a function instead.&#39;</span><span class="p">,</span>
+          <span class="nx">vm</span>
+        <span class="p">)</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">this</span><span class="p">.</span><span class="nx">value</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">lazy</span>
+      <span class="o">?</span> <span class="kc">undefined</span>
+      <span class="o">:</span> <span class="k">this</span><span class="p">.</span><span class="nx">get</span><span class="p">()</span>
+  <span class="p">}</span>
+
+  <span class="cm">/**
+</span><span class="cm">   * Evaluate the getter, and re-collect dependencies.
+</span><span class="cm">   */</span>
+  <span class="c1">// 每次new Watcher()时调用此方法
+</span><span class="c1"></span>  <span class="nx">get</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="c1">// 将自身的Watcher实例赋值到全局的Dep.target，等待下面调用this.getter.call()时，如果触发数据getter方法，就可以自动收集依赖
+</span><span class="c1"></span>    <span class="nx">pushTarget</span><span class="p">(</span><span class="k">this</span><span class="p">)</span>
+    <span class="kd">let</span> <span class="nx">value</span>
+    <span class="k">const</span> <span class="nx">vm</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">vm</span>
+    <span class="k">try</span> <span class="p">{</span>
+      <span class="nx">value</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">getter</span><span class="p">.</span><span class="nx">call</span><span class="p">(</span><span class="nx">vm</span><span class="p">,</span> <span class="nx">vm</span><span class="p">)</span>
+    <span class="p">}</span> <span class="k">catch</span> <span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">if</span> <span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">user</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">handleError</span><span class="p">(</span><span class="nx">e</span><span class="p">,</span> <span class="nx">vm</span><span class="p">,</span> <span class="sb">`getter for watcher &#34;</span><span class="si">${</span><span class="k">this</span><span class="p">.</span><span class="nx">expression</span><span class="si">}</span><span class="sb">&#34;`</span><span class="p">)</span>
+      <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="k">throw</span> <span class="nx">e</span>
+      <span class="p">}</span>
+    <span class="p">}</span> <span class="k">finally</span> <span class="p">{</span>
+      <span class="c1">// &#34;touch&#34; every property so they are all tracked as
+</span><span class="c1"></span>      <span class="c1">// dependencies for deep watching
+</span><span class="c1"></span>      <span class="k">if</span> <span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">deep</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">traverse</span><span class="p">(</span><span class="nx">value</span><span class="p">)</span>
+      <span class="p">}</span>
+      <span class="nx">popTarget</span><span class="p">()</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">cleanupDeps</span><span class="p">()</span>
+    <span class="p">}</span>
+    <span class="k">return</span> <span class="nx">value</span>
+  <span class="p">}</span>
+
+  <span class="cm">/**
+</span><span class="cm">   * Add a dependency to this directive.
+</span><span class="cm">   */</span>
+  <span class="c1">// 此方法会被Dep类实例触发，与其互相引用
+</span><span class="c1"></span>  <span class="nx">addDep</span> <span class="p">(</span><span class="nx">dep</span><span class="o">:</span> <span class="nx">Dep</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">const</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">dep</span><span class="p">.</span><span class="nx">id</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="k">this</span><span class="p">.</span><span class="nx">newDepIds</span><span class="p">.</span><span class="nx">has</span><span class="p">(</span><span class="nx">id</span><span class="p">))</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">newDepIds</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">newDeps</span><span class="p">.</span><span class="nx">push</span><span class="p">(</span><span class="nx">dep</span><span class="p">)</span>
+      <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="k">this</span><span class="p">.</span><span class="nx">depIds</span><span class="p">.</span><span class="nx">has</span><span class="p">(</span><span class="nx">id</span><span class="p">))</span> <span class="p">{</span>
+        <span class="nx">dep</span><span class="p">.</span><span class="nx">addSub</span><span class="p">(</span><span class="k">this</span><span class="p">)</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+
+  <span class="c1">// 省略部分代码
+</span><span class="c1"></span><span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="断点调试的方式跟踪源码">断点调试的方式跟踪源码</h3>
+
+<p>在源码中按Object.defineProperty()搜索，可以定位到主要的函数。根据响应原理，使用defineProperty()的方法一定会设置getter和setter方法</p>
+
+<ul>
+<li>src/core/observer/index.js的defineReactive()</li>
+<li>src/core/instance/state.js的defineComputed()</li>
+</ul>
+
+<h4 id="vm-data-https-vuejs-org-v2-api-data-里的数据如何被监听变化的"><a href="https://vuejs.org/v2/api/#data">vm.$data</a>里的数据如何被监听变化的？</h4>
+
+<p>先在defineReactive()方法里的getter方法设置断点，命中后，可看到getter方法的返回值符合预期，是初始化值1。并且代码运行至936行，进行依赖收集，监听num=1的变化。</p>
+
+<p><img src="/img/vue/1.jpg" alt="1" /></p>
+
+<p>跟踪堆栈的内容，可以发现是Vue将template块转换成render函数后，在读取_vm.num值时触发到getter方法的。</p>
+
+<p><img src="/img/vue/2.png" alt="2" /></p>
+
+<p>前提，需要先对vm.$data下所有的字段调用defineProperty()才能触发依赖的收集。同样通过断点，发现这个过程是通过调用src/core/instance/state.js的initData方法</p>
+
+<p><img src="/img/vue/3.png" alt="3" /></p>
+
+<p><img src="/img/vue/4.png" alt="4" /></p>
+
+<p>如果对num的值进行更新，就会相应触发setter方法。并在setter方法的最后，会通过dep.notify()通知所有依赖num值的依赖方。</p>
+
+<p><img src="/img/vue/5.png" alt="5" /></p>
+
+<h4 id="computed属性如何被监听的">computed属性如何被监听的？</h4>
+
+<ol>
+<li>先加一个computed属性</li>
+</ol>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js">  <span class="nx">computed</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">plusNum</span> <span class="p">()</span> <span class="p">{</span>
+      <span class="k">return</span> <span class="k">this</span><span class="p">.</span><span class="nx">num</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div>
+<ol>
+<li>在template里使用plusNum</li>
+</ol>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="p">&lt;</span><span class="nt">template</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&#34;app&#34;</span><span class="p">&gt;</span>
+    {{ num }}
+    {{ plusNum }}
+    <span class="p">&lt;</span><span class="nt">button</span> <span class="err">@</span><span class="na">click</span><span class="o">=</span><span class="s">&#34;click&#34;</span><span class="p">&gt;</span>+1<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">template</span><span class="p">&gt;</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>最后在defineComputed()和createComputedGetter()这两个方法里加个断点。</p>
+
+<p><img src="/img/vue/6.png" alt="6" /></p>
+
+<p><img src="/img/vue/7.png" alt="7" /></p>
+
+<p>computed里的字段通过initComputed()自动初始化，初始化时，在defineComputed()方法里调用仍然是通过defineProperty()进行设置getter和setter方法。只是computed属性字段比data特殊，setter方法不需要设置。</p>
+
+<p>通常computed属性字段会依赖vm.$data的属性字段。例如this.plusNum就依赖了this.num。</p>
+
+<p>Vue做法是this.num值被更新时（触发this.num的setter方法里的dep.notify()），会通过Watcher类的update方法将dirty值设置为True。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-js" data-lang="js"><span class="k">export</span> <span class="k">default</span> <span class="k">class</span> <span class="nx">Watcher</span> <span class="p">{</span>
+  <span class="nx">update</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="cm">/* istanbul ignore else */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">lazy</span><span class="p">)</span> <span class="p">{</span>
+      <span class="c1">// computed属性字段在初始化Watcher实例时会将lazy赋值为True
+</span><span class="c1"></span>      <span class="k">this</span><span class="p">.</span><span class="nx">dirty</span> <span class="o">=</span> <span class="kc">true</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="k">this</span><span class="p">.</span><span class="nx">sync</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">run</span><span class="p">()</span>
+    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+      <span class="nx">queueWatcher</span><span class="p">(</span><span class="k">this</span><span class="p">)</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></td></tr></table>
+</div>
+</div>
+<p>每次this.plusNum被取值时（触发getter方法），会检查watcher.dirty，True的话，表明依赖有更新，需要重新计算。</p>
+
+<h4 id="watch-https-vuejs-org-v2-api-watch-是如何实现的"><a href="https://vuejs.org/v2/api/#watch">watch</a>是如何实现的？</h4>
+
+<p>首先对测试工程代码进行修改</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-html" data-lang="html"><span class="p">&lt;</span><span class="nt">template</span><span class="p">&gt;</span>
+  <span class="p">&lt;</span><span class="nt">div</span> <span class="na">id</span><span class="o">=</span><span class="s">&#34;app&#34;</span><span class="p">&gt;</span>
+      <span class="c">&lt;!--&gt;删掉{{ num }}的引用&lt;/--&gt;</span>
+    <span class="p">&lt;</span><span class="nt">button</span> <span class="err">@</span><span class="na">click</span><span class="o">=</span><span class="s">&#34;click&#34;</span><span class="p">&gt;</span>+1<span class="p">&lt;/</span><span class="nt">button</span><span class="p">&gt;</span>
+  <span class="p">&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<span class="p">&lt;/</span><span class="nt">template</span><span class="p">&gt;</span>
+
+<span class="p">&lt;</span><span class="nt">script</span><span class="p">&gt;</span>
+<span class="k">export</span> <span class="k">default</span> <span class="p">{</span>
+  <span class="nx">data</span> <span class="p">()</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">{</span>
+      <span class="nx">num</span><span class="o">:</span> <span class="mi">1</span><span class="p">,</span>
+      <span class="nx">plusNum</span><span class="o">:</span> <span class="mi">0</span>  <span class="c1">// 新增属性plusNum
+</span><span class="c1"></span>    <span class="p">}</span>
+  <span class="p">},</span>
+  <span class="nx">watch</span><span class="o">:</span> <span class="p">{</span>
+    <span class="c1">// 新增num的watch方法
+</span><span class="c1"></span>    <span class="nx">num</span> <span class="p">(</span><span class="nx">newVal</span><span class="p">)</span> <span class="p">{</span>
+      <span class="k">this</span><span class="p">.</span><span class="nx">plusNum</span> <span class="o">=</span> <span class="k">this</span><span class="p">.</span><span class="nx">num</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+<span class="p">&lt;/</span><span class="nt">script</span><span class="p">&gt;</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>Vue对watch功能的实现思路是在初始化方法initWatch()中，调用了实例方法的<a href="https://vuejs.org/v2/api/#vm-watch">vue.$watch</a>，$watch里会new一个Watcher用于监听，在Watcher的构造方法里，通过调用this.get()会触发到this.num的getter()，getter()里会把这儿new出来的Watcher实例当成依赖收集起来。只要this.num的setter()被触发，就会通过dep.notify()触发到Watcher实例的回调方法。</p>
+
+<p><img src="/img/vue/9.png" alt="9" /></p>
+
+<p>大概就是这样子，watch功能就实现了。这个过程通过堆栈可看出来。</p>
+
+<p><img src="/img/vue/8.png" alt="8" /></p>
+
+<h3 id="总结">总结</h3>
+
+<ol>
+<li>vm.$data里的数据通过initData()更新，把每个数据转换成可观察对象。</li>
+<li>vm.computed里的数据通过defineComputed()方法重写getter方法，getter方法内部进行依赖收集，依赖更新时，不实时更新vm.computed，而是设置Watcher实例的dirty字段，只有在真正读取vm.computed值时，才进行重新计算。</li>
+<li>vm.watch里的数据调用vm.$watch，收集依赖，依赖更新值时，触发watch数据定义的方法。</li>
+</ol>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B02-%E8%BF%90%E8%BE%93%E5%B1%82/" data-toggle="tooltip" data-placement="top" title="计算机网络笔记-运输层2">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

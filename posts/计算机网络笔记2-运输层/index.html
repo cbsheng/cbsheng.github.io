@@ -67,21 +67,37 @@
       </ul>
       
 <aside class="toc">
-  
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#1-四次挥手中的2msl">1.四次挥手中的2MSL</a></li>
+<li><a href="#2-四次挥手中的fin-wait2和close-wait状态详述">2.四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述</a></li>
+<li><a href="#3-流量控制与拥塞避免">3.流量控制与拥塞避免</a></li>
+<li><a href="#4-滑动窗口的三种变化">4. 滑动窗口的三种变化</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
 </aside>
       <p>运输层还有很多有趣的事情。</p>
 
 <p></p>
 
-<p>本文的内容：
-1. 四次挥手中的2MSL
-2. 四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述
-3. 流量控制与拥塞避免
-4. 滑动窗口的三种变化</p>
+<p>本文的内容：</p>
+
+<ol>
+<li>四次挥手中的2MSL</li>
+<li>四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述</li>
+<li>流量控制与拥塞避免</li>
+<li>滑动窗口的三种变化</li>
+</ol>
 
 <hr />
 
-<p>#1.四次挥手中的2MSL</p>
+<h3 id="1-四次挥手中的2msl">1.四次挥手中的2MSL</h3>
 
 <p>接着<a href="http://cbsheng.github.io/2014/12/10/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C%E7%AC%94%E8%AE%B0-%E8%BF%90%E8%BE%93%E5%B1%82/">&lt;&lt;计算机网络笔记1-运输层&gt;&gt;</a>的介绍，其实处于2MSL中，socket(四元组)是不能再被用的了。所以在2MSL内所有迟来的数据都被丢弃掉，因为在这段时间里，残留的在网络中的数据报会逐渐地消失。</p>
 
@@ -94,9 +110,11 @@
 
 <hr />
 
-<p>#2.四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述
-先看图：
-<img src="/img/network/TCPfour-way handshake.png" alt="TCP four-way handshake" /></p>
+<h3 id="2-四次挥手中的fin-wait2和close-wait状态详述">2.四次挥手中的FIN-WAIT2和CLOSE_WAIT状态详述</h3>
+
+<p>先看图：</p>
+
+<p><img src="/img/network/TCPfour-way handshake.png" alt="TCP four-way handshake" /></p>
 
 <p><strong>FIN-WAIT2状态</strong>是等待服务端发起<strong>FIN</strong>。
 <strong>CLOSE_WAIT状态</strong>是服务端自身的等待。</p>
@@ -109,7 +127,7 @@
 
 <hr />
 
-<p>#3.流量控制与拥塞避免</p>
+<h3 id="3-流量控制与拥塞避免">3.流量控制与拥塞避免</h3>
 
 <p>流量控制是针对<strong>接受方</strong>的。
 因为在接收方中有接受缓存，发送方即使发送再多也会被丢弃。根据接受方的接受缓存窗口大小，也可以控制双方的发送速率与接受速率。</p>
@@ -119,7 +137,7 @@
 
 <hr />
 
-<p>#4. 滑动窗口的三种变化</p>
+<h3 id="4-滑动窗口的三种变化">4. 滑动窗口的三种变化</h3>
 
 <ol>
 <li>窗口左边沿向右边沿靠近为窗口合拢。这种变化是因为收到ACK。</li>
@@ -130,8 +148,6 @@
 <p>在发送方，发送缓存的窗口值必须小于或等于接收方在TCP首部添的16位窗口值。什么时候会小于？滑动窗口第一种变化就会小于。</p>
 
 <p><strong>本文会随着review而保持更新</strong></p>
-
-<p>##完</p>
     </article>
 
     
@@ -146,7 +162,9 @@
   </ul>
 
     <ul class="pager article-pager">
-      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-newer">
+          <a href="/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" data-toggle="tooltip" data-placement="top" title="通过断点跟踪探索Vue响应原理">&lt; Newer</a>
+      </li>
       <li class="pager-older">
         <a href="/posts/%E4%BB%8E%E7%A1%AC%E4%BB%B6%E5%87%BA%E5%8F%91%E6%B5%85%E8%B0%88%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E7%9A%84%E6%AE%B5%E6%9C%BA%E5%88%B6%E4%B8%8E%E9%A1%B5%E6%9C%BA%E5%88%B6/" data-toggle="tooltip" data-placement="top" title="从硬件出发，浅谈操作系统的段机制与页机制">Older &gt;</a>
       </li>

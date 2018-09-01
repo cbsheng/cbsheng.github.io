@@ -100,10 +100,13 @@
 
 <p></p>
 
-<p>因特网的网络层有三个主要的组件：
-1. <strong>IP协议</strong> (数据包格式、编址规则、分组处理规则）
-2. <strong>选路协议</strong> （路径选择、 RIP，OSPF，BGP）
-3. <strong>差错和信息报告协议（ICMP）</strong> （差错报告，路由器指令）</p>
+<p>因特网的网络层有三个主要的组件：</p>
+
+<ol>
+<li><strong>IP协议</strong> (数据包格式、编址规则、分组处理规则）</li>
+<li><strong>选路协议</strong> （路径选择、 RIP，OSPF，BGP）</li>
+<li><strong>差错和信息报告协议（ICMP）</strong> （差错报告，路由器指令）</li>
+</ol>
 
 <hr />
 
@@ -135,8 +138,9 @@
 
 <p>所以当数据报由于长度超过网络的MTU时就必须进行分片。为坚持使网络内核保持简单的原则，IPV4的设计者决定将数据包的重新组装工作放到端系统中，而不是放在网络路由器中。</p>
 
-<p>为了让目的主机执行这些重装任务，IPV4设计者将<strong>标识符、标志和片偏移</strong>字段放在IP数据报中。在接收方数据报的有效载荷仅当IP层已完全重构为初始IP数据报时，才被传递给运输层。
-<img src="/img/network/IPfragment.jpg" alt="fragment" /></p>
+<p>为了让目的主机执行这些重装任务，IPV4设计者将<strong>标识符、标志和片偏移</strong>字段放在IP数据报中。在接收方数据报的有效载荷仅当IP层已完全重构为初始IP数据报时，才被传递给运输层。</p>
+
+<p><img src="/img/network/IPfragment.jpg" alt="fragment" /></p>
 
 <p>分片可能引起致命的DoS攻击，即攻击者发送一系列古怪的片。IPV6从根本上废止了分片，从而简化了IP分组的处理。</p>
 
@@ -144,13 +148,17 @@
 
 <h3 id="检验和的求法">检验和的求法</h3>
 
-<p>在求检验和中需要用到<strong>反码算术运算</strong>。
-&gt; 反码算术运算是从低位到高位逐列进行计算，若最高位相加后产生进位，则最后得到的结果要加1，然后再求结果的反码。</p>
+<p>在求检验和中需要用到<strong>反码算术运算</strong>。</p>
+
+<blockquote>
+<p>反码算术运算是从低位到高位逐列进行计算，若最高位相加后产生进位，则最后得到的结果要加1，然后再求结果的反码。</p>
+</blockquote>
 
 <p>检验和的计算方法：
 <strong>在发送方</strong>，先把IP数据报首部划分为许多16为字的序列，并把检验和字段置零。用反码算术运算把所有16位字相加后，将得到的和的反码写入检验和字段。
-<strong>在接受方</strong>，收到数据报后，将首部的所有16位字再使用反码算术运算相加一次。将得到的和取反码，即得出接收方的检验和的计算结果，若首部未发生变化，则此结果必为0。否则则认为出差错，将数据包丢弃。<strong>注意</strong>，IP的差错检测只检验首部，不检验数据部分。
-<img src="/img/network/IPchecksum.jpg" alt="checksum" /></p>
+<strong>在接受方</strong>，收到数据报后，将首部的所有16位字再使用反码算术运算相加一次。将得到的和取反码，即得出接收方的检验和的计算结果，若首部未发生变化，则此结果必为0。否则则认为出差错，将数据包丢弃。<strong>注意</strong>，IP的差错检测只检验首部，不检验数据部分。</p>
+
+<p><img src="/img/network/IPchecksum.jpg" alt="checksum" /></p>
 
 <hr />
 
@@ -164,8 +172,9 @@
 <p>因此，一个IP地址在技术上是与一个接口相关联的，而不是与包括该接口的主机或路由器相关联的。</p>
 </blockquote>
 
-<p>在全球的因特网中，每台主机和路由器上的每个接口都必须有一个全球唯一的IP地址。这些地址不能随意方式自由选择。一个接口的IP地址的组成需要由其链接的子网来决定。
-<img src="/img/network/IPsubnet.jpg" alt="subnet" /></p>
+<p>在全球的因特网中，每台主机和路由器上的每个接口都必须有一个全球唯一的IP地址。这些地址不能随意方式自由选择。一个接口的IP地址的组成需要由其链接的子网来决定。</p>
+
+<p><img src="/img/network/IPsubnet.jpg" alt="subnet" /></p>
 
 <p>因特网的地址分配策略被称为<strong>无类别域间选路（CIDR）</strong>。
 其形式如：<strong>a.b.c.d/x</strong>。地址中的x最高比特构成来IP地址的网络部分，并且经常被称为该地址的<strong>前缀（或网络前缀）</strong>。</p>
@@ -182,8 +191,9 @@
 
 <p>为了解决这个问题，在路由表查找时候采用<strong>最长前缀匹配</strong>的方法从多个匹配结果中选择其一。所以对应上面的例子就会选择后者。</p>
 
-<p>考虑到性能问题，在路由器中查表的操作需要很快，不能造成性能的瓶颈。那么可以利用二叉线索树去查找路由表。为了简化二叉树的结构，可以使用每个IP地址的<strong>唯一前缀</strong>去构造。
-<img src="/img/network/IPbinarytree.jpeg" alt="BinaryTree" /></p>
+<p>考虑到性能问题，在路由器中查表的操作需要很快，不能造成性能的瓶颈。那么可以利用二叉线索树去查找路由表。为了简化二叉树的结构，可以使用每个IP地址的<strong>唯一前缀</strong>去构造。</p>
+
+<p><img src="/img/network/IPbinarytree.jpeg" alt="BinaryTree" /></p>
 
 <hr />
 
@@ -193,9 +203,12 @@
 
 <p><strong>一个AS可以使用多种内部路由选择协议和度量</strong>，但是<strong>一个AS对其他AS表现出的是一个单一的和一致的路由选择策略</strong>。</p>
 
-<p>在目前的因特网中，一个大的ISP就是一个自治系统。因特网把路由选择协议划分为两大类：
-1. <strong>内部网关协议IGP</strong>。如RIP， OSPF。
-2. <strong>外部网关协议EGP</strong>。如BGP。</p>
+<p>在目前的因特网中，一个大的ISP就是一个自治系统。因特网把路由选择协议划分为两大类：</p>
+
+<ol>
+<li><strong>内部网关协议IGP</strong>。如RIP， OSPF。</li>
+<li><strong>外部网关协议EGP</strong>。如BGP。</li>
+</ol>
 
 <p>一个AS内的一台或多台路由器有另外的任务，就是负责向本AS之外的目的地转发分组。这些路由器被称为<strong>网关路由器</strong>。</p>
 
@@ -207,34 +220,49 @@
 
 <p>RIP是一种分布式的<strong>基于距离向量的路由选择协议</strong>。</p>
 
-<p>关于RIP的一些重要的概念：
-1. RIP要求每个路由器度维护从自己到每一个目的网络的距离记录（即距离向量）。
-2. RIP的“距离”也称为<strong>“跳数“</strong>。
-3. RIP允许一条路径最多只能包含15个路由器，超出来就相当与不可达。可见<strong>RIP值适用于小型互联网</strong>。
-4. RIP选择一个具有最少路由器的路由，哪怕还存在一条高速低时延但路由器较多的路由。</p>
+<p>关于RIP的一些重要的概念：</p>
 
-<p>RIP的特点：
-1. 仅和相邻路由器交换信息。只要两个路由器之间不需要经过另一个路由器就说明是相邻的。
-2. 路由器交换的信息是当前本路由器的路由表。
-3. 按固定时间间隔交换路由信息。</p>
+<ol>
+<li>RIP要求每个路由器度维护从自己到每一个目的网络的距离记录（即距离向量）。</li>
+<li>RIP的“距离”也称为<strong>“跳数“</strong>。</li>
+<li>RIP允许一条路径最多只能包含15个路由器，超出来就相当与不可达。可见<strong>RIP值适用于小型互联网</strong>。</li>
+<li>RIP选择一个具有最少路由器的路由，哪怕还存在一条高速低时延但路由器较多的路由。</li>
+</ol>
+
+<p>RIP的特点：</p>
+
+<ol>
+<li>仅和相邻路由器交换信息。只要两个路由器之间不需要经过另一个路由器就说明是相邻的。</li>
+<li>路由器交换的信息是当前本路由器的路由表。</li>
+<li>按固定时间间隔交换路由信息。</li>
+</ol>
 
 <p>当相邻路由器在交换路由表信息时，也就是本路由器根据相邻路由器发来的路由表进行更新自己的路由表时，更新的原则是找出每个目的网络的最短距离。这种算法又称为<strong>距离向量算法</strong>。</p>
 
-<p><strong>路由器上执行的距离向量算法的步骤</strong>：
-&gt; 1. 修改地址为X的相邻路由器发来的RIP报文中的所有路由项目：把<strong>下一跳</strong>改为X，把<strong>距离</strong>值增一。
-&gt; 2. 判断，若本地路由表没有目的网络N，则添加。
-&gt; 3. 判断，若本地路由表有目的网络N，则比较下一跳是否相同。相同的话就用新的路由项目覆盖掉本地的项目。
-&gt; 4. 判断，若本地路由表有目的网络N，而且下一跳也不相同时，则在两者中选择距离最少的。
-&gt; 5. 判断，若距离大于15的路由项目记为不可到达。</p>
+<p><strong>路由器上执行的距离向量算法的步骤</strong>：</p>
 
-<p>RIP协议的报文结构：
-<img src="/img/network/RIP.png" alt="RIP" /></p>
+<blockquote>
+<ol>
+<li>修改地址为X的相邻路由器发来的RIP报文中的所有路由项目：把<strong>下一跳</strong>改为X，把<strong>距离</strong>值增一。</li>
+<li>判断，若本地路由表没有目的网络N，则添加。</li>
+<li>判断，若本地路由表有目的网络N，则比较下一跳是否相同。相同的话就用新的路由项目覆盖掉本地的项目。</li>
+<li>判断，若本地路由表有目的网络N，而且下一跳也不相同时，则在两者中选择距离最少的。</li>
+<li>判断，若距离大于15的路由项目记为不可到达。</li>
+</ol>
+</blockquote>
 
-<p>报文结构说明：
-1. <strong>命令</strong>字段=1表示请求路由信息，=2表示对请求路由信息的响应或未被请求而发出的路由更新报文。
-2. “必为0”的部分是为了4字节对齐。
-3. <strong>地址族标识符</strong>字段用来标志所使用的地址协议。<strong>路由标记</strong>填入<strong>自治系统号ASN</strong>。
-4. 一个RIP报文最多可包括25个路由，因而报文最大长度是4+20*5=504字节。</p>
+<p>RIP协议的报文结构：</p>
+
+<p><img src="/img/network/RIP.png" alt="RIP" /></p>
+
+<p>报文结构说明：</p>
+
+<ol>
+<li><strong>命令</strong>字段=1表示请求路由信息，=2表示对请求路由信息的响应或未被请求而发出的路由更新报文。</li>
+<li>“必为0”的部分是为了4字节对齐。</li>
+<li><strong>地址族标识符</strong>字段用来标志所使用的地址协议。<strong>路由标记</strong>填入<strong>自治系统号ASN</strong>。</li>
+<li>一个RIP报文最多可包括25个路由，因而报文最大长度是4+20*5=504字节。</li>
+</ol>
 
 <p><strong>RIP协议的优缺点</strong>：
 - <strong>优点</strong>是协议实现简单，开销较小。
@@ -246,22 +274,28 @@
 
 <p><strong>开放最短路径优先OSPF</strong>是为了克服RIP的缺点而开发出来的。它使用的是分布式的<strong>链路状态协议</strong>，而不是RIP的距离向量协议。</p>
 
-<p><strong>OSPF</strong>与RIP的区别：
-1. 使用<strong>洪泛法</strong>向本自治系统中<strong>所有路由器</strong>发送信息。
-2. 发送的信息就是与本路由器相邻的所有路由器的<strong>链路状态</strong>。所谓<strong>链路状态</strong>就是说明本路由器都和哪些路由器相邻以及该链路的<strong>度量（表示费用、距离、时延、带宽等）</strong>，有时称这个度量为<strong>代价</strong>。
-3. 只有当链路状态发生变化时，路由器才向所有的路由器用洪泛法发送此信息。</p>
+<p><strong>OSPF</strong>与RIP的区别：</p>
+
+<ol>
+<li>使用<strong>洪泛法</strong>向本自治系统中<strong>所有路由器</strong>发送信息。</li>
+<li>发送的信息就是与本路由器相邻的所有路由器的<strong>链路状态</strong>。所谓<strong>链路状态</strong>就是说明本路由器都和哪些路由器相邻以及该链路的<strong>度量（表示费用、距离、时延、带宽等）</strong>，有时称这个度量为<strong>代价</strong>。</li>
+<li>只有当链路状态发生变化时，路由器才向所有的路由器用洪泛法发送此信息。</li>
+</ol>
 
 <p>由于各路由器之间频繁地交换链路状态信息，因此所有的路由器最终都能建立一个<strong>链路状态数据库</strong>，这个数据库实际就是<strong>全网的拓扑结构图</strong>。
 每个路由器使用链路状态数据库中的数据构造出自己的路由表。</p>
 
-<p>OSPF将一个自治系统再划分为若干个称为<strong>区域</strong>的更小的范围。这样做就可以有效的减少利用洪泛法交换链路状态信息时网络上的通信量。
-<img src="/img/network/OSPF.png" alt="OSPF" />
-不同的区域使用32位的的区域标识符进行区别。一个区域内的路由器最好不要超过200个。
+<p>OSPF将一个自治系统再划分为若干个称为<strong>区域</strong>的更小的范围。这样做就可以有效的减少利用洪泛法交换链路状态信息时网络上的通信量。</p>
+
+<p><img src="/img/network/OSPF.png" alt="OSPF" /></p>
+
+<p>不同的区域使用32位的的区域标识符进行区别。一个区域内的路由器最好不要超过200个。
 上图的<strong>R3， R7， R4</strong>被称为<strong>区域边界路由器</strong>。在主干区域内的所有路由器都称为<strong>主干路由器</strong>。<strong>R6</strong>称为<strong>自治系统边界路由器</strong>。
 一个主干路由器可以同时是区域边界路由器。</p>
 
-<p>OSPF报文的结构：
-<img src="/img/network/OSPFmessage.jpg" alt="OSPF Message" /></p>
+<p>OSPF报文的结构：</p>
+
+<p><img src="/img/network/OSPFmessage.jpg" alt="OSPF Message" /></p>
 
 <hr />
 
@@ -285,13 +319,15 @@
 
 <h1 id="3-差错和信息报告协议-icmp">3. 差错和信息报告协议（ICMP）</h1>
 
-<p>ICMP协议用于主机和路由器彼此交互网络层信息。ICMP报文的种类有两种：<strong>差错报告报文</strong>和<strong>询问报文</strong>。
-<img src="/img/network/ICMP.png" alt="ICMP" /></p>
+<p>ICMP协议用于主机和路由器彼此交互网络层信息。ICMP报文的种类有两种：<strong>差错报告报文</strong>和<strong>询问报文</strong>。</p>
+
+<p><img src="/img/network/ICMP.png" alt="ICMP" /></p>
 
 <p>ICMP通常被认为死IP的一部分，但从体系上讲它是位于IP之上，因为ICMP报文是承载在IP分组中的。这就是说，ICMP报文是作为IP有效载荷承载的。</p>
 
-<p>几种常用的ICMP报文类型：
-<img src="/img/network/ICMPtype.jpg" alt="ICMP Type" /></p>
+<p>几种常用的ICMP报文类型：</p>
+
+<p><img src="/img/network/ICMPtype.jpg" alt="ICMP Type" /></p>
 
 <p>文章中使用到的图片均来源于网络</p>
 

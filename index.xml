@@ -7,10 +7,30 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
-    <lastBuildDate>Thu, 06 Aug 2015 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 01 Sep 2018 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>通过断点跟踪探索Vue响应原理</title>
+      <link>http://cbsheng.github.io/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/</link>
+      <pubDate>Sat, 01 Sep 2018 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;基于版本2.5.2源码分析&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&#34;响应原理&#34;&gt;响应原理&lt;/h3&gt;
+
+&lt;ol&gt;
+&lt;li&gt;&lt;a href=&#34;https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/defineProperty&#34;&gt;Object.defineProperty()&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://en.wikipedia.org/wiki/Observer_pattern&#34;&gt;观察者模式&lt;/a&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;&lt;/p&gt;</description>
+    </item>
     
     <item>
       <title>计算机网络笔记-运输层2</title>
