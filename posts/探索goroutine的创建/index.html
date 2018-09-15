@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>探索goroutine的创建 - 无远弗届</title>
+  <meta property="og:title" content="探索goroutine的创建 - 无远弗届" />
+  <meta name="twitter:title" content="探索goroutine的创建 - 无远弗届" />
+  <meta name="description" content="go 1.9.3
+GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+本文使用delve进行调试
+ 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
+对照我们的工程代码，不难发现
+ runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.">
+  <meta property="og:description" content="go 1.9.3
+GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+本文使用delve进行调试
+ 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
+对照我们的工程代码，不难发现
+ runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.">
+  <meta name="twitter:description" content="go 1.9.3
+GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+本文使用delve进行调试
+ 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // …">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">探索goroutine的创建</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>September 15, 2018</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-folder"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/golang%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-tag"></i>
+            golang源码分析
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#创建一个goroutine">创建一个goroutine</a></li>
+<li><a href="#定位goroutine的创建函数">定位goroutine的创建函数</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      
+
+<blockquote>
+<p>go 1.9.3</p>
+
+<p>GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;</p>
+
+<p>本文使用<a href="https://github.com/derekparker/delve">delve</a>进行调试</p>
+</blockquote>
+
+<h3 id="创建一个goroutine">创建一个goroutine</h3>
+
+<p>一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// $GOPATH/test/main.go
+</span><span class="c1"></span><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+	<span class="s">&#34;fmt&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">var</span> <span class="nx">ch</span> <span class="p">=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="kt">bool</span><span class="p">)</span>
+
+<span class="kd">func</span> <span class="nx">hello</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&#34;hello world&#34;</span><span class="p">)</span>
+	<span class="nb">close</span><span class="p">(</span><span class="nx">ch</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">go</span> <span class="nx">hello</span><span class="p">()</span>
+	<span class="o">&lt;-</span> <span class="nx">ch</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="定位goroutine的创建函数">定位goroutine的创建函数</h3>
+
+<p>由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。</p>
+
+<p>对照我们的工程代码，不难发现</p>
+
+<ul>
+<li>runtime.newproc 对应 go hello()</li>
+<li>runtime.chanrecv1 对应 &lt;- ch</li>
+</ul>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash">$ dlv debug <span class="nb">test</span>
+Type <span class="s1">&#39;help&#39;</span> <span class="k">for</span> list of commands.
+<span class="o">(</span>dlv<span class="o">)</span> disassemble -l main.main
+TEXT main.main<span class="o">(</span>SB<span class="o">)</span> /Users/cbsheng/goproject/src/test/main.go
+    <span class="c1"># 省略部分代码
+</span><span class="c1"></span>	main.go:15	0x10b2740	e88b0af8ff		call <span class="nv">$runtime</span>.newproc
+    <span class="c1"># 省略部分代码
+</span><span class="c1"></span>	main.go:16	0x10b2759	e8321ff5ff		call <span class="nv">$runtime</span>.chanrecv1
+    <span class="c1"># 省略部分代码
+</span><span class="c1"></span>	main.go:14	0x10b2768	e8c30bfaff		call <span class="nv">$runtime</span>.morestack_noctxt
+<span class="o">(</span>dlv<span class="o">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>继续看看runtime.newproc源码在哪儿。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash"><span class="o">(</span>dlv<span class="o">)</span> b runtime.newproc
+Breakpoint <span class="m">1</span> <span class="nb">set</span> at 0x10331d0 <span class="k">for</span> runtime.newproc<span class="o">()</span> /usr/local/go/src/runtime/proc.go:2919
+<span class="o">(</span>dlv<span class="o">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>找到文件，就来看看庐山真面目吧。</p>
+
+<p>newproc()活比较简单，只是获取参数的起始地址与go hello()这条语句的PC寄存器。真正干活的是newproc1()。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// Create a new g running fn with siz bytes of arguments.
+</span><span class="c1">// Put it on the queue of g&#39;s waiting to run.
+</span><span class="c1">// The compiler turns a go statement into a call to this.
+</span><span class="c1">// Cannot split the stack because it assumes that the arguments
+</span><span class="c1">// are available sequentially after &amp;fn; they would not be
+</span><span class="c1">// copied if a stack split occurred.
+</span><span class="c1">//go:nosplit
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">newproc</span><span class="p">(</span><span class="nx">siz</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">fn</span> <span class="o">*</span><span class="nx">funcval</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">argp</span> <span class="o">:=</span> <span class="nx">add</span><span class="p">(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">fn</span><span class="p">),</span> <span class="nx">sys</span><span class="p">.</span><span class="nx">PtrSize</span><span class="p">)</span>
+	<span class="nx">pc</span> <span class="o">:=</span> <span class="nx">getcallerpc</span><span class="p">(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">siz</span><span class="p">))</span>
+	<span class="nx">systemstack</span><span class="p">(</span><span class="kd">func</span><span class="p">()</span> <span class="p">{</span>
+		<span class="nx">newproc1</span><span class="p">(</span><span class="nx">fn</span><span class="p">,</span> <span class="p">(</span><span class="o">*</span><span class="kt">uint8</span><span class="p">)(</span><span class="nx">argp</span><span class="p">),</span> <span class="nx">siz</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">pc</span><span class="p">)</span>
+	<span class="p">})</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>那就来看看newproc1()。</p>
+
+<p>newproc1() 就比较长了，这儿概括下它做了的事情：</p>
+
+<ol>
+<li>从TLS拿到当前运行的G实例，并且使绑定到当前线程的M实例不可抢占。</li>
+<li>从M实例上取到P实例，如果P实例本地上有free goroutine就拿过去，没有就到全局调度器那儿偷一些过来。这两个地方都没有，就按照最低栈大小2K new一个G实例（即goroutine）。</li>
+<li>然后设置好G实例上的各种寄存器的信息，SP、PC等。</li>
+<li>将G实例的状态变更为Grunnable，放到P实例的本地可运行队列里等待调度执行，若队列满了，就把一半的G移到全局调度器下。</li>
+<li>释放M实例的不可抢占状态。返回新的G实例。</li>
+</ol>
+
+<blockquote>
+<p>如果是程序刚启动，经由runtime.rt0_go调用newproc1时，实质干的事情就是创建一个G，把runtime.main(也包含main.main)放进去。在执行mstart时，触发调度。所以main实际是在一个新的G里运行的，而不是g0。</p>
+</blockquote>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">  1
+</span><span class="lnt">  2
+</span><span class="lnt">  3
+</span><span class="lnt">  4
+</span><span class="lnt">  5
+</span><span class="lnt">  6
+</span><span class="lnt">  7
+</span><span class="lnt">  8
+</span><span class="lnt">  9
+</span><span class="lnt"> 10
+</span><span class="lnt"> 11
+</span><span class="lnt"> 12
+</span><span class="lnt"> 13
+</span><span class="lnt"> 14
+</span><span class="lnt"> 15
+</span><span class="lnt"> 16
+</span><span class="lnt"> 17
+</span><span class="lnt"> 18
+</span><span class="lnt"> 19
+</span><span class="lnt"> 20
+</span><span class="lnt"> 21
+</span><span class="lnt"> 22
+</span><span class="lnt"> 23
+</span><span class="lnt"> 24
+</span><span class="lnt"> 25
+</span><span class="lnt"> 26
+</span><span class="lnt"> 27
+</span><span class="lnt"> 28
+</span><span class="lnt"> 29
+</span><span class="lnt"> 30
+</span><span class="lnt"> 31
+</span><span class="lnt"> 32
+</span><span class="lnt"> 33
+</span><span class="lnt"> 34
+</span><span class="lnt"> 35
+</span><span class="lnt"> 36
+</span><span class="lnt"> 37
+</span><span class="lnt"> 38
+</span><span class="lnt"> 39
+</span><span class="lnt"> 40
+</span><span class="lnt"> 41
+</span><span class="lnt"> 42
+</span><span class="lnt"> 43
+</span><span class="lnt"> 44
+</span><span class="lnt"> 45
+</span><span class="lnt"> 46
+</span><span class="lnt"> 47
+</span><span class="lnt"> 48
+</span><span class="lnt"> 49
+</span><span class="lnt"> 50
+</span><span class="lnt"> 51
+</span><span class="lnt"> 52
+</span><span class="lnt"> 53
+</span><span class="lnt"> 54
+</span><span class="lnt"> 55
+</span><span class="lnt"> 56
+</span><span class="lnt"> 57
+</span><span class="lnt"> 58
+</span><span class="lnt"> 59
+</span><span class="lnt"> 60
+</span><span class="lnt"> 61
+</span><span class="lnt"> 62
+</span><span class="lnt"> 63
+</span><span class="lnt"> 64
+</span><span class="lnt"> 65
+</span><span class="lnt"> 66
+</span><span class="lnt"> 67
+</span><span class="lnt"> 68
+</span><span class="lnt"> 69
+</span><span class="lnt"> 70
+</span><span class="lnt"> 71
+</span><span class="lnt"> 72
+</span><span class="lnt"> 73
+</span><span class="lnt"> 74
+</span><span class="lnt"> 75
+</span><span class="lnt"> 76
+</span><span class="lnt"> 77
+</span><span class="lnt"> 78
+</span><span class="lnt"> 79
+</span><span class="lnt"> 80
+</span><span class="lnt"> 81
+</span><span class="lnt"> 82
+</span><span class="lnt"> 83
+</span><span class="lnt"> 84
+</span><span class="lnt"> 85
+</span><span class="lnt"> 86
+</span><span class="lnt"> 87
+</span><span class="lnt"> 88
+</span><span class="lnt"> 89
+</span><span class="lnt"> 90
+</span><span class="lnt"> 91
+</span><span class="lnt"> 92
+</span><span class="lnt"> 93
+</span><span class="lnt"> 94
+</span><span class="lnt"> 95
+</span><span class="lnt"> 96
+</span><span class="lnt"> 97
+</span><span class="lnt"> 98
+</span><span class="lnt"> 99
+</span><span class="lnt">100
+</span><span class="lnt">101
+</span><span class="lnt">102
+</span><span class="lnt">103
+</span><span class="lnt">104
+</span><span class="lnt">105
+</span><span class="lnt">106
+</span><span class="lnt">107
+</span><span class="lnt">108
+</span><span class="lnt">109
+</span><span class="lnt">110
+</span><span class="lnt">111
+</span><span class="lnt">112
+</span><span class="lnt">113
+</span><span class="lnt">114
+</span><span class="lnt">115
+</span><span class="lnt">116
+</span><span class="lnt">117
+</span><span class="lnt">118
+</span><span class="lnt">119
+</span><span class="lnt">120
+</span><span class="lnt">121
+</span><span class="lnt">122
+</span><span class="lnt">123
+</span><span class="lnt">124
+</span><span class="lnt">125
+</span><span class="lnt">126
+</span><span class="lnt">127
+</span><span class="lnt">128
+</span><span class="lnt">129
+</span><span class="lnt">130
+</span><span class="lnt">131
+</span><span class="lnt">132
+</span><span class="lnt">133
+</span><span class="lnt">134
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// Create a new g running fn with narg bytes of arguments starting
+</span><span class="c1">// at argp and returning nret bytes of results.  callerpc is the
+</span><span class="c1">// address of the go statement that created this. The new g is put
+</span><span class="c1">// on the queue of g&#39;s waiting to run.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">newproc1</span><span class="p">(</span><span class="nx">fn</span> <span class="o">*</span><span class="nx">funcval</span><span class="p">,</span> <span class="nx">argp</span> <span class="o">*</span><span class="kt">uint8</span><span class="p">,</span> <span class="nx">narg</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">nret</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="o">*</span><span class="nx">g</span> <span class="p">{</span>
+	<span class="nx">_g_</span> <span class="o">:=</span> <span class="nx">getg</span><span class="p">()</span>
+
+	<span class="k">if</span> <span class="nx">fn</span> <span class="o">==</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">throwing</span> <span class="p">=</span> <span class="o">-</span><span class="mi">1</span> <span class="c1">// do not dump full stacks
+</span><span class="c1"></span>		<span class="nx">throw</span><span class="p">(</span><span class="s">&#34;go of nil func value&#34;</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locks</span><span class="o">++</span> <span class="c1">// disable preemption because it can be holding p in a local var
+</span><span class="c1"></span>	<span class="nx">siz</span> <span class="o">:=</span> <span class="nx">narg</span> <span class="o">+</span> <span class="nx">nret</span>
+	<span class="nx">siz</span> <span class="p">=</span> <span class="p">(</span><span class="nx">siz</span> <span class="o">+</span> <span class="mi">7</span><span class="p">)</span> <span class="o">&amp;^</span> <span class="mi">7</span>
+
+	<span class="c1">// We could allocate a larger initial stack if necessary.
+</span><span class="c1"></span>	<span class="c1">// Not worth it: this is almost always an error.
+</span><span class="c1"></span>	<span class="c1">// 4*sizeof(uintreg): extra space added below
+</span><span class="c1"></span>	<span class="c1">// sizeof(uintreg): caller&#39;s LR (arm) or return address (x86, in gostartcall).
+</span><span class="c1"></span>	<span class="c1">// 判断函数参数和返回值的大小是否超出栈大小
+</span><span class="c1"></span>	<span class="k">if</span> <span class="nx">siz</span> <span class="o">&gt;=</span> <span class="nx">_StackMin</span><span class="o">-</span><span class="mi">4</span><span class="o">*</span><span class="nx">sys</span><span class="p">.</span><span class="nx">RegSize</span><span class="o">-</span><span class="nx">sys</span><span class="p">.</span><span class="nx">RegSize</span> <span class="p">{</span>
+		<span class="nx">throw</span><span class="p">(</span><span class="s">&#34;newproc: function arguments too large for new goroutine&#34;</span><span class="p">)</span>
+	<span class="p">}</span>
+
+	<span class="nx">_p_</span> <span class="o">:=</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">p</span><span class="p">.</span><span class="nx">ptr</span><span class="p">()</span>
+	<span class="c1">// 拿到一个free的goroutine，没有就从全局调度器偷
+</span><span class="c1"></span>	<span class="nx">newg</span> <span class="o">:=</span> <span class="nx">gfget</span><span class="p">(</span><span class="nx">_p_</span><span class="p">)</span>
+	<span class="k">if</span> <span class="nx">newg</span> <span class="o">==</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="c1">// 新建g实例，栈大小2K
+</span><span class="c1"></span>		<span class="nx">newg</span> <span class="p">=</span> <span class="nx">malg</span><span class="p">(</span><span class="nx">_StackMin</span><span class="p">)</span>
+		<span class="c1">// g实例状态改成dead
+</span><span class="c1"></span>		<span class="nx">casgstatus</span><span class="p">(</span><span class="nx">newg</span><span class="p">,</span> <span class="nx">_Gidle</span><span class="p">,</span> <span class="nx">_Gdead</span><span class="p">)</span>
+		<span class="c1">// 将此g实例加入全局的g队列里
+</span><span class="c1"></span>		<span class="nx">allgadd</span><span class="p">(</span><span class="nx">newg</span><span class="p">)</span> <span class="c1">// publishes with a g-&gt;status of Gdead so GC scanner doesn&#39;t look at uninitialized stack.
+</span><span class="c1"></span>	<span class="p">}</span>
+	<span class="k">if</span> <span class="nx">newg</span><span class="p">.</span><span class="nx">stack</span><span class="p">.</span><span class="nx">hi</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+		<span class="nx">throw</span><span class="p">(</span><span class="s">&#34;newproc1: newg missing stack&#34;</span><span class="p">)</span>
+	<span class="p">}</span>
+
+	<span class="k">if</span> <span class="nx">readgstatus</span><span class="p">(</span><span class="nx">newg</span><span class="p">)</span> <span class="o">!=</span> <span class="nx">_Gdead</span> <span class="p">{</span>
+		<span class="nx">throw</span><span class="p">(</span><span class="s">&#34;newproc1: new g is not Gdead&#34;</span><span class="p">)</span>
+	<span class="p">}</span>
+
+	<span class="nx">totalSize</span> <span class="o">:=</span> <span class="mi">4</span><span class="o">*</span><span class="nx">sys</span><span class="p">.</span><span class="nx">RegSize</span> <span class="o">+</span> <span class="nb">uintptr</span><span class="p">(</span><span class="nx">siz</span><span class="p">)</span> <span class="o">+</span> <span class="nx">sys</span><span class="p">.</span><span class="nx">MinFrameSize</span> <span class="c1">// extra space in case of reads slightly beyond frame
+</span><span class="c1"></span>	<span class="nx">totalSize</span> <span class="o">+=</span> <span class="o">-</span><span class="nx">totalSize</span> <span class="o">&amp;</span> <span class="p">(</span><span class="nx">sys</span><span class="p">.</span><span class="nx">SpAlign</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span>                  <span class="c1">// align to spAlign
+</span><span class="c1"></span>	<span class="nx">sp</span> <span class="o">:=</span> <span class="nx">newg</span><span class="p">.</span><span class="nx">stack</span><span class="p">.</span><span class="nx">hi</span> <span class="o">-</span> <span class="nx">totalSize</span>
+	<span class="nx">spArg</span> <span class="o">:=</span> <span class="nx">sp</span>
+
+	<span class="k">if</span> <span class="nx">usesLR</span> <span class="p">{</span>
+        <span class="c1">// 使用了LR寄存器存放函数调用完毕后的返回地址
+</span><span class="c1"></span>		<span class="c1">// caller&#39;s LR
+</span><span class="c1"></span>		<span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="kt">uintptr</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">sp</span><span class="p">))</span> <span class="p">=</span> <span class="mi">0</span>
+		<span class="nx">prepGoExitFrame</span><span class="p">(</span><span class="nx">sp</span><span class="p">)</span>
+		<span class="nx">spArg</span> <span class="o">+=</span> <span class="nx">sys</span><span class="p">.</span><span class="nx">MinFrameSize</span>
+	<span class="p">}</span>
+	<span class="k">if</span> <span class="nx">narg</span> <span class="p">&gt;</span> <span class="mi">0</span> <span class="p">{</span>
+		<span class="nx">memmove</span><span class="p">(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">spArg</span><span class="p">),</span> <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">argp</span><span class="p">),</span> <span class="nb">uintptr</span><span class="p">(</span><span class="nx">narg</span><span class="p">))</span>
+		<span class="c1">// This is a stack-to-stack copy. If write barriers
+</span><span class="c1"></span>		<span class="c1">// are enabled and the source stack is grey (the
+</span><span class="c1"></span>		<span class="c1">// destination is always black), then perform a
+</span><span class="c1"></span>		<span class="c1">// barrier copy. We do this *after* the memmove
+</span><span class="c1"></span>		<span class="c1">// because the destination stack may have garbage on
+</span><span class="c1"></span>		<span class="c1">// it.
+</span><span class="c1"></span>		<span class="k">if</span> <span class="nx">writeBarrier</span><span class="p">.</span><span class="nx">needed</span> <span class="o">&amp;&amp;</span> <span class="p">!</span><span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">curg</span><span class="p">.</span><span class="nx">gcscandone</span> <span class="p">{</span>
+			<span class="nx">f</span> <span class="o">:=</span> <span class="nx">findfunc</span><span class="p">(</span><span class="nx">fn</span><span class="p">.</span><span class="nx">fn</span><span class="p">)</span>
+			<span class="nx">stkmap</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">stackmap</span><span class="p">)(</span><span class="nx">funcdata</span><span class="p">(</span><span class="nx">f</span><span class="p">,</span> <span class="nx">_FUNCDATA_ArgsPointerMaps</span><span class="p">))</span>
+			<span class="c1">// We&#39;re in the prologue, so it&#39;s always stack map index 0.
+</span><span class="c1"></span>			<span class="nx">bv</span> <span class="o">:=</span> <span class="nx">stackmapdata</span><span class="p">(</span><span class="nx">stkmap</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+			<span class="nx">bulkBarrierBitmap</span><span class="p">(</span><span class="nx">spArg</span><span class="p">,</span> <span class="nx">spArg</span><span class="p">,</span> <span class="nb">uintptr</span><span class="p">(</span><span class="nx">narg</span><span class="p">),</span> <span class="mi">0</span><span class="p">,</span> <span class="nx">bv</span><span class="p">.</span><span class="nx">bytedata</span><span class="p">)</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+
+	<span class="c1">// 将newg.sched结构的内存置0
+</span><span class="c1"></span>	<span class="nx">memclrNoHeapPointers</span><span class="p">(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">),</span> <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Sizeof</span><span class="p">(</span><span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">))</span>
+	<span class="c1">// g实例的调度现场保存SP寄存器
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">.</span><span class="nx">sp</span> <span class="p">=</span> <span class="nx">sp</span>
+	<span class="c1">// g实例自身也保存SP寄存器
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">stktopsp</span> <span class="p">=</span> <span class="nx">sp</span>
+	<span class="c1">// g实例的调度现场保存goexit函数的PC寄存器，这样goroutine执行完后都能做好回收
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">.</span><span class="nx">pc</span> <span class="p">=</span> <span class="nx">funcPC</span><span class="p">(</span><span class="nx">goexit</span><span class="p">)</span> <span class="o">+</span> <span class="nx">sys</span><span class="p">.</span><span class="nx">PCQuantum</span> <span class="c1">// +PCQuantum so that previous instruction is in same function
+</span><span class="c1"></span>	<span class="c1">// g实例的调度现场关联上对应的g
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">.</span><span class="nx">g</span> <span class="p">=</span> <span class="nx">guintptr</span><span class="p">(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="nx">newg</span><span class="p">))</span>
+	<span class="c1">// g实例的调度现场保存真正待执行函数的PC寄存器
+</span><span class="c1"></span>	<span class="nx">gostartcallfn</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">,</span> <span class="nx">fn</span><span class="p">)</span>
+	<span class="c1">// g实例保存go语句的PC寄存器位置
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">gopc</span> <span class="p">=</span> <span class="nx">callerpc</span>
+	<span class="c1">// g实例保存待执行函数的PC寄存器位置
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">startpc</span> <span class="p">=</span> <span class="nx">fn</span><span class="p">.</span><span class="nx">fn</span>
+
+	<span class="k">if</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">curg</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="c1">// 如果是在goroutine中再new 一个goroutine，就会有labels?
+</span><span class="c1"></span>		<span class="nx">newg</span><span class="p">.</span><span class="nx">labels</span> <span class="p">=</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">curg</span><span class="p">.</span><span class="nx">labels</span>
+	<span class="p">}</span>
+
+	<span class="c1">// 存在一些go自己创建的goroutine，如果是就在全局调度器里把数量记录下来
+</span><span class="c1"></span>	<span class="k">if</span> <span class="nx">isSystemGoroutine</span><span class="p">(</span><span class="nx">newg</span><span class="p">)</span> <span class="p">{</span>
+		<span class="nx">atomic</span><span class="p">.</span><span class="nx">Xadd</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sched</span><span class="p">.</span><span class="nx">ngsys</span><span class="p">,</span> <span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="c1">// 设置该goroutine不能被gc扫
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">gcscanvalid</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="c1">// 设置goroutine状态为可运行
+</span><span class="c1"></span>	<span class="nx">casgstatus</span><span class="p">(</span><span class="nx">newg</span><span class="p">,</span> <span class="nx">_Gdead</span><span class="p">,</span> <span class="nx">_Grunnable</span><span class="p">)</span>
+
+	<span class="c1">// 检查当前p实例里的goroutine id缓存列表是否已经用完，是的话就从全局调度器那儿再获取_GoidCacheBatch个
+</span><span class="c1"></span>	<span class="k">if</span> <span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span> <span class="o">==</span> <span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcacheend</span> <span class="p">{</span>
+		<span class="c1">// Sched.goidgen is the last allocated id,
+</span><span class="c1"></span>		<span class="c1">// this batch must be [sched.goidgen+1, sched.goidgen+GoidCacheBatch].
+</span><span class="c1"></span>		<span class="c1">// At startup sched.goidgen=0, so main goroutine receives goid=1.
+</span><span class="c1"></span>		<span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span> <span class="p">=</span> <span class="nx">atomic</span><span class="p">.</span><span class="nx">Xadd64</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sched</span><span class="p">.</span><span class="nx">goidgen</span><span class="p">,</span> <span class="nx">_GoidCacheBatch</span><span class="p">)</span>
+		<span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span> <span class="o">-=</span> <span class="nx">_GoidCacheBatch</span> <span class="o">-</span> <span class="mi">1</span>
+		<span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcacheend</span> <span class="p">=</span> <span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span> <span class="o">+</span> <span class="nx">_GoidCacheBatch</span>
+	<span class="p">}</span>
+	<span class="c1">// 设置goroutine id
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">goid</span> <span class="p">=</span> <span class="nb">int64</span><span class="p">(</span><span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span><span class="p">)</span>
+	<span class="nx">_p_</span><span class="p">.</span><span class="nx">goidcache</span><span class="o">++</span>
+	<span class="k">if</span> <span class="nx">raceenabled</span> <span class="p">{</span>
+		<span class="nx">newg</span><span class="p">.</span><span class="nx">racectx</span> <span class="p">=</span> <span class="nx">racegostart</span><span class="p">(</span><span class="nx">callerpc</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="k">if</span> <span class="nx">trace</span><span class="p">.</span><span class="nx">enabled</span> <span class="p">{</span>
+		<span class="nx">traceGoCreate</span><span class="p">(</span><span class="nx">newg</span><span class="p">,</span> <span class="nx">newg</span><span class="p">.</span><span class="nx">startpc</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="c1">// 把新建的G推进当前P的本地队列，并提优设置为下一个可运行的G
+</span><span class="c1"></span>	<span class="nx">runqput</span><span class="p">(</span><span class="nx">_p_</span><span class="p">,</span> <span class="nx">newg</span><span class="p">,</span> <span class="kc">true</span><span class="p">)</span>
+
+	<span class="k">if</span> <span class="nx">atomic</span><span class="p">.</span><span class="nx">Load</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sched</span><span class="p">.</span><span class="nx">npidle</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="nx">atomic</span><span class="p">.</span><span class="nx">Load</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sched</span><span class="p">.</span><span class="nx">nmspinning</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="nx">mainStarted</span> <span class="p">{</span>
+		<span class="c1">// main方法启动后才进入此if块。唤醒一个空闲的P，如果没有M则创建一个
+</span><span class="c1"></span>		<span class="nx">wakep</span><span class="p">()</span>
+	<span class="p">}</span>
+	<span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locks</span><span class="o">--</span>
+	<span class="k">if</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locks</span> <span class="o">==</span> <span class="mi">0</span> <span class="o">&amp;&amp;</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">preempt</span> <span class="p">{</span> <span class="c1">// restore the preemption request in case we&#39;ve cleared it in newstack
+</span><span class="c1"></span>		<span class="nx">_g_</span><span class="p">.</span><span class="nx">stackguard0</span> <span class="p">=</span> <span class="nx">stackPreempt</span>
+	<span class="p">}</span>
+	<span class="k">return</span> <span class="nx">newg</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" data-toggle="tooltip" data-placement="top" title="通过断点跟踪探索Vue响应原理">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

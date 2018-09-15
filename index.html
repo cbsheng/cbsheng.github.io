@@ -39,6 +39,44 @@
   <div class="main" role="main">
     <section class="list home-list">
       <article class="article">
+        <a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/" class="article-titles">
+          <h2 class="article-title">探索goroutine的创建</h2>
+          
+        </a>
+        <ul class="article-meta">
+          <li class="article-meta-date"><time>September 15, 2018</time></li>
+          <li class="article-meta-categories">
+            <a href="/categories/golang/">
+              <i class="fas fa-folder"></i>
+              Golang
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-categories">
+            <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+              <i class="fas fa-folder"></i>
+              源码分析
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-tags">
+            <a href="/tags/golang%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+              <i class="fas fa-tag"></i>
+              golang源码分析
+            </a>&nbsp;
+          </li>
+        </ul>
+        <div class="article-content">
+          go 1.9.3
+GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+本文使用delve进行调试
+ 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
+对照我们的工程代码，不难发现
+ runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.
+        </div>
+        <div class="article-readmore"><a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/">Read more...</a></div>
+        <div class="article-floatclear"></div>
+      </article>
+      <article class="article">
         <a href="/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" class="article-titles">
           <h2 class="article-title">通过断点跟踪探索Vue响应原理</h2>
           

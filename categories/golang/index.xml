@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Golang on 无远弗届</title>
+    <link>http://cbsheng.github.io/categories/golang/</link>
+    <description>Recent content in Golang on 无远弗届</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
+    <lastBuildDate>Sat, 15 Sep 2018 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="http://cbsheng.github.io/categories/golang/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>探索goroutine的创建</title>
+      <link>http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/</link>
+      <pubDate>Sat, 15 Sep 2018 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/</guid>
+      <description>go 1.9.3
+GOARCH=&amp;ldquo;amd64&amp;rdquo; GOOS=&amp;ldquo;darwin&amp;rdquo;
+本文使用delve进行调试
+ 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &amp;#34;fmt&amp;#34; ) var ch = make(chan bool) func hello() { fmt.Println(&amp;#34;hello world&amp;#34;) close(ch) } func main() { go hello() &amp;lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
+对照我们的工程代码，不难发现
+ runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &amp;lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &amp;#39;help&amp;#39; for list of commands.</description>
+    </item>
+    
+  </channel>
+</rss>
