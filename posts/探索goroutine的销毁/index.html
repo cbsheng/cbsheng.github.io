@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>探索goroutine的销毁 - 无远弗届</title>
+  <meta property="og:title" content="探索goroutine的销毁 - 无远弗届" />
+  <meta name="twitter:title" content="探索goroutine的销毁 - 无远弗届" />
+  <meta name="description" content="
+go version = 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
+本文使用delve进行调试
+
+goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+">
+  <meta property="og:description" content="
+go version = 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
+本文使用delve进行调试
+
+goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+">
+  <meta name="twitter:description" content="
+go version = 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
+本文使用delve进行调试
+
+goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E9%94%80%E6%AF%81/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">探索goroutine的销毁</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>September 15, 2018</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-folder"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/golang%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-tag"></i>
+            golang源码分析
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#测试工程">测试工程</a></li>
+<li><a href="#runtime-goexit">runtime.goexit()</a></li>
+<li><a href="#runtime-goexit0">runtime.goexit0()</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <blockquote>
+<p>go version = 1.9.3</p>
+
+<p>GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;</p>
+
+<p>本文使用<a href="https://github.com/derekparker/delve">delve</a>进行调试</p>
+
+<p>goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+</p>
+</blockquote>
+
+<h3 id="测试工程">测试工程</h3>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// $GOPATH/test/main.go
+</span><span class="c1"></span><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+	<span class="s">&#34;fmt&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">var</span> <span class="nx">ch</span> <span class="p">=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="kt">bool</span><span class="p">)</span>
+
+<span class="kd">func</span> <span class="nx">hello</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&#34;hello world&#34;</span><span class="p">)</span>
+	<span class="nb">close</span><span class="p">(</span><span class="nx">ch</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">go</span> <span class="nx">hello</span><span class="p">()</span>
+	<span class="o">&lt;-</span> <span class="nx">ch</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>从goroutine运行时的堆栈找下线索</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash">$ go build main.go
+$ <span class="nb">test</span> dlv <span class="nb">exec</span> main
+Type <span class="s1">&#39;help&#39;</span> <span class="k">for</span> list of commands.
+<span class="o">(</span>dlv<span class="o">)</span> b main.hello
+Breakpoint <span class="m">1</span> <span class="nb">set</span> at 0x10933f3 <span class="k">for</span> main.hello<span class="o">()</span> ./main.go:9
+<span class="o">(</span>dlv<span class="o">)</span> c
+&gt; main.hello<span class="o">()</span> ./main.go:9 <span class="o">(</span>hits goroutine<span class="o">(</span><span class="m">5</span><span class="o">)</span>:1 total:1<span class="o">)</span> <span class="o">(</span>PC: 0x10933f3<span class="o">)</span>
+Warning: debugging optimized <span class="k">function</span>
+     <span class="m">4</span>:		<span class="s2">&#34;fmt&#34;</span>
+     <span class="m">5</span>:	<span class="o">)</span>
+     <span class="m">6</span>:
+     <span class="m">7</span>:	var <span class="nv">ch</span> <span class="o">=</span> make<span class="o">(</span>chan bool<span class="o">)</span>
+     <span class="m">8</span>:
+<span class="o">=</span>&gt;   <span class="m">9</span>:	func hello<span class="o">()</span> <span class="o">{</span>
+    <span class="m">10</span>:		fmt.Println<span class="o">(</span><span class="s2">&#34;hello world&#34;</span><span class="o">)</span>
+    <span class="m">11</span>:		close<span class="o">(</span>ch<span class="o">)</span>
+    <span class="m">12</span>:	<span class="o">}</span>
+    <span class="m">13</span>:
+    <span class="m">14</span>:	func main<span class="o">()</span> <span class="o">{</span>
+<span class="o">(</span>dlv<span class="o">)</span> n
+<span class="c1"># ....
+</span><span class="c1"></span><span class="o">(</span>dlv<span class="o">)</span> bt
+<span class="m">0</span>  0x0000000001093401 in main.hello
+   at ./main.go:10
+<span class="m">1</span>  0x00000000010506d1 in runtime.goexit
+   at /usr/local/go/src/runtime/asm_amd64.s:2337
+<span class="o">(</span>dlv<span class="o">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="runtime-goexit">runtime.goexit()</h3>
+
+<p>每个goroutine栈底都会有runtime.goexit()，它其实就是在创建G的时候，被设置进去的。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span><span class="lnt">8
+</span><span class="lnt">9
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// Create a new g running fn with narg bytes of arguments starting
+</span><span class="c1">// at argp and returning nret bytes of results.  callerpc is the
+</span><span class="c1">// address of the go statement that created this. The new g is put
+</span><span class="c1">// on the queue of g&#39;s waiting to run.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">newproc1</span><span class="p">(</span><span class="nx">fn</span> <span class="o">*</span><span class="nx">funcval</span><span class="p">,</span> <span class="nx">argp</span> <span class="o">*</span><span class="kt">uint8</span><span class="p">,</span> <span class="nx">narg</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">nret</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">callerpc</span> <span class="kt">uintptr</span><span class="p">)</span> <span class="o">*</span><span class="nx">g</span> <span class="p">{</span>
+    <span class="c1">// 省略部分代码
+</span><span class="c1"></span>	<span class="nx">newg</span><span class="p">.</span><span class="nx">sched</span><span class="p">.</span><span class="nx">pc</span> <span class="p">=</span> <span class="nx">funcPC</span><span class="p">(</span><span class="nx">goexit</span><span class="p">)</span> <span class="o">+</span> <span class="nx">sys</span><span class="p">.</span><span class="nx">PCQuantum</span> <span class="c1">// +PCQuantum so that previous instruction is in same function
+</span><span class="c1"></span>    <span class="c1">// 省略部分代码
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>如果只关心已经执行完毕的goroutine是如何处置的，跟踪源码发现实质起干活的是goexit0()。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly">// src/runtime/asm_amd64.s
+TEXT runtime·goexit(SB),NOSPLIT,$0-0
+	BYTE	$0x90	// NOP
+	CALL	runtime·goexit1(SB)	// does not return
+	// traceback from goexit1 must hit code range of goexit
+	BYTE	$0x90	// NOP</code></pre></td></tr></table>
+</div>
+</div><div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// src/runtime/proc.go
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">goexit1</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">if</span> <span class="nx">raceenabled</span> <span class="p">{</span>
+		<span class="nx">racegoend</span><span class="p">()</span>
+	<span class="p">}</span>
+	<span class="k">if</span> <span class="nx">trace</span><span class="p">.</span><span class="nx">enabled</span> <span class="p">{</span>
+		<span class="nx">traceGoEnd</span><span class="p">()</span>
+	<span class="p">}</span>
+	<span class="nx">mcall</span><span class="p">(</span><span class="nx">goexit0</span><span class="p">)</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>mcall()是使用go汇编语言实现的。它的参数是一个函数类型。<code>func mcall(fn func(*g))</code></p>
+
+<p>作用就是将当前线程的执行栈先切换到g0上。然后将当前的goroutine（即执行完的goroutine对应的G实例）当成参数传给fn，在g0的栈上继续执行fn。等于换了个SP指针，然后继续执行goexit0。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly">// func mcall(fn func(*g))
+// Switch to m-&gt;g0&#39;s stack, call fn(g).
+// Fn must never return. It should gogo(&amp;g-&gt;sched)
+// to keep running g.
+TEXT runtime·mcall(SB), NOSPLIT, $0-8
+    // 把待执行的函数放进DI寄存器
+	MOVQ	fn+0(FP), DI
+
+	// 这里应该是拿到g
+	get_tls(CX)
+	MOVQ	g(CX), AX	// save state in g-&gt;sched
+	MOVQ	0(SP), BX	// caller&#39;s PC
+	// 把g的现场寄存器信息存到g.sched里
+	MOVQ	BX, (g_sched+gobuf_pc)(AX)
+	LEAQ	fn+0(FP), BX	// caller&#39;s SP
+	MOVQ	BX, (g_sched+gobuf_sp)(AX)
+	MOVQ	AX, (g_sched+gobuf_g)(AX)
+	MOVQ	BP, (g_sched+gobuf_bp)(AX)
+
+	// switch to m-&gt;g0 &amp; its stack, call fn
+	// 找出g0
+	MOVQ	g(CX), BX
+	MOVQ	g_m(BX), BX
+	MOVQ	m_g0(BX), SI
+	// 此时 SI = g0, AX = g
+	CMPQ	SI, AX	// if g == m-&gt;g0 call badmcall
+	JNE	3(PC)
+	// 如果当前的g就是g0，就执行badmcall，否则跳过下面的三条指令
+	MOVQ	$runtime·badmcall(SB), AX
+	JMP	AX
+	MOVQ	SI, g(CX)	// g = m-&gt;g0
+	// 切到g0的栈上
+	MOVQ	(g_sched+gobuf_sp)(SI), SP	// sp = m-&gt;g0-&gt;sched.sp
+	// 推g进栈
+	PUSHQ	AX
+	MOVQ	DI, DX
+	MOVQ	0(DI), DI
+	// 调用fn，并且永远都不应该返回，否则执行badmcall2
+	CALL	DI
+	POPQ	AX
+	MOVQ	$runtime·badmcall2(SB), AX
+	JMP	AX
+	RET</code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="runtime-goexit0">runtime.goexit0()</h3>
+
+<p>干了几件事：</p>
+
+<ol>
+<li>G的状态变为_GDead，如果是系统G则更新全局计数器。</li>
+<li>重置G身上一系列的属性变量。</li>
+<li>解除M和G的互相引用关系。</li>
+<li>放置在本地P或全局的free goroutine队列。</li>
+<li>调度，寻找下一个可运行的goroutine。</li>
+</ol>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// src/runtime/proc.go
+</span><span class="c1">// goexit continuation on g0.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">goexit0</span><span class="p">(</span><span class="nx">gp</span> <span class="o">*</span><span class="nx">g</span><span class="p">)</span> <span class="p">{</span>
+	<span class="c1">// 这里取到g0
+</span><span class="c1"></span>	<span class="nx">_g_</span> <span class="o">:=</span> <span class="nx">getg</span><span class="p">()</span>
+
+	<span class="c1">// 将已经执行完毕的goroutine状态设为dead
+</span><span class="c1"></span>	<span class="nx">casgstatus</span><span class="p">(</span><span class="nx">gp</span><span class="p">,</span> <span class="nx">_Grunning</span><span class="p">,</span> <span class="nx">_Gdead</span><span class="p">)</span>
+	<span class="c1">// 如果是系统goroutine则全局计数减一
+</span><span class="c1"></span>	<span class="k">if</span> <span class="nx">isSystemGoroutine</span><span class="p">(</span><span class="nx">gp</span><span class="p">)</span> <span class="p">{</span>
+		<span class="nx">atomic</span><span class="p">.</span><span class="nx">Xadd</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sched</span><span class="p">.</span><span class="nx">ngsys</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
+	<span class="p">}</span>
+
+	<span class="c1">// 清空
+</span><span class="c1"></span>	<span class="nx">gp</span><span class="p">.</span><span class="nx">m</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">lockedm</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="c1">// lockedg什么作用？
+</span><span class="c1"></span>	<span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">lockedg</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">paniconfault</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">_defer</span> <span class="p">=</span> <span class="kc">nil</span> <span class="c1">// should be true already but just in case.
+</span><span class="c1"></span>	<span class="nx">gp</span><span class="p">.</span><span class="nx">_panic</span> <span class="p">=</span> <span class="kc">nil</span> <span class="c1">// non-nil for Goexit during panic. points at stack-allocated data.
+</span><span class="c1"></span>	<span class="nx">gp</span><span class="p">.</span><span class="nx">writebuf</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">waitreason</span> <span class="p">=</span> <span class="s">&#34;&#34;</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">param</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">labels</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">gp</span><span class="p">.</span><span class="nx">timer</span> <span class="p">=</span> <span class="kc">nil</span>
+
+	<span class="c1">// Note that gp&#39;s stack scan is now &#34;valid&#34; because it has no
+</span><span class="c1"></span>	<span class="c1">// stack.
+</span><span class="c1"></span>	<span class="nx">gp</span><span class="p">.</span><span class="nx">gcscanvalid</span> <span class="p">=</span> <span class="kc">true</span>
+	<span class="c1">// 因为M和正在运行的G是有互相引用的，G都已经执行完了，所以就摘掉
+</span><span class="c1"></span>	<span class="nx">dropg</span><span class="p">()</span>
+
+	<span class="k">if</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locked</span><span class="o">&amp;^</span><span class="nx">_LockExternal</span> <span class="o">!=</span> <span class="mi">0</span> <span class="p">{</span>
+		<span class="nb">print</span><span class="p">(</span><span class="s">&#34;invalid m-&gt;locked = &#34;</span><span class="p">,</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locked</span><span class="p">,</span> <span class="s">&#34;\n&#34;</span><span class="p">)</span>
+		<span class="nx">throw</span><span class="p">(</span><span class="s">&#34;internal lockOSThread error&#34;</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">locked</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="c1">// 把已经执行完的goroutine放置在P的本地free goroutine队列里，最多64个，超出则转移到全局调度器那儿
+</span><span class="c1"></span>	<span class="nx">gfput</span><span class="p">(</span><span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">p</span><span class="p">.</span><span class="nx">ptr</span><span class="p">(),</span> <span class="nx">gp</span><span class="p">)</span>
+	<span class="c1">// 调度，找出下一个可以执行的goroutine，继续执行
+</span><span class="c1"></span>	<span class="nx">schedule</span><span class="p">()</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer">
+          <a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/" data-toggle="tooltip" data-placement="top" title="探索goroutine的创建">&lt; Newer</a>
+      </li>
+      <li class="pager-older">
+        <a href="/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" data-toggle="tooltip" data-placement="top" title="通过断点跟踪探索Vue响应原理">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

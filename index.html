@@ -124,6 +124,47 @@ GOOS=&ldquo;darwin&rdquo;</p>
         <div class="article-floatclear"></div>
       </article>
       <article class="article">
+        <a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E9%94%80%E6%AF%81/" class="article-titles">
+          <h2 class="article-title">探索goroutine的销毁</h2>
+          
+        </a>
+        <ul class="article-meta">
+          <li class="article-meta-date"><time>September 15, 2018</time></li>
+          <li class="article-meta-categories">
+            <a href="/categories/golang/">
+              <i class="fas fa-folder"></i>
+              Golang
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-categories">
+            <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+              <i class="fas fa-folder"></i>
+              源码分析
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-tags">
+            <a href="/tags/golang%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+              <i class="fas fa-tag"></i>
+              golang源码分析
+            </a>&nbsp;
+          </li>
+        </ul>
+        <div class="article-content">
+          <blockquote>
+<p>go version = 1.9.3</p>
+
+<p>GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;</p>
+
+<p>本文使用<a href="https://github.com/derekparker/delve">delve</a>进行调试</p>
+
+<p>goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+</p>
+        </div>
+        <div class="article-readmore"><a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E9%94%80%E6%AF%81/">Read more...</a></div>
+        <div class="article-floatclear"></div>
+      </article>
+      <article class="article">
         <a href="/posts/%E9%80%9A%E8%BF%87%E6%96%AD%E7%82%B9%E8%B7%9F%E8%B8%AA%E6%8E%A2%E7%B4%A2vue%E5%93%8D%E5%BA%94%E5%8E%9F%E7%90%86/" class="article-titles">
           <h2 class="article-title">通过断点跟踪探索Vue响应原理</h2>
           

@@ -51,5 +51,23 @@ GOOS=&amp;ldquo;darwin&amp;rdquo;&lt;/p&gt;
 &lt;/p&gt;</description>
     </item>
     
+    <item>
+      <title>探索goroutine的销毁</title>
+      <link>http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E9%94%80%E6%AF%81/</link>
+      <pubDate>Sat, 15 Sep 2018 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E9%94%80%E6%AF%81/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;go version = 1.9.3&lt;/p&gt;
+
+&lt;p&gt;GOARCH=&amp;ldquo;amd64&amp;rdquo;
+GOOS=&amp;ldquo;darwin&amp;rdquo;&lt;/p&gt;
+
+&lt;p&gt;本文使用&lt;a href=&#34;https://github.com/derekparker/delve&#34;&gt;delve&lt;/a&gt;进行调试&lt;/p&gt;
+
+&lt;p&gt;goroutine实际不会被销毁，而是结束后放在free goroutine里等待被再次使用
+&lt;/p&gt;</description>
+    </item>
+    
   </channel>
 </rss>
