@@ -68,13 +68,19 @@
           </li>
         </ul>
         <div class="article-content">
-          go 1.9.3
-GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
-本文使用delve进行调试
- 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
-1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
-对照我们的工程代码，不难发现
- runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.
+          <blockquote>
+<p>go 1.9.3</p>
+
+<p>GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;</p>
+
+<p>本文使用<a href="https://github.com/derekparker/delve">delve</a>进行调试</p>
+</blockquote>
+
+<h3 id="创建一个goroutine">创建一个goroutine</h3>
+
+<p>一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+</p>
         </div>
         <div class="article-readmore"><a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/">Read more...</a></div>
         <div class="article-floatclear"></div>

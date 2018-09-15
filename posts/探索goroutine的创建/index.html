@@ -6,25 +6,45 @@
   <title>探索goroutine的创建 - 无远弗届</title>
   <meta property="og:title" content="探索goroutine的创建 - 无远弗届" />
   <meta name="twitter:title" content="探索goroutine的创建 - 无远弗届" />
-  <meta name="description" content="go 1.9.3
-GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+  <meta name="description" content="
+go 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
 本文使用delve进行调试
- 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
-1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
-对照我们的工程代码，不难发现
- runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.">
-  <meta property="og:description" content="go 1.9.3
-GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+
+
+创建一个goroutine
+
+一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+">
+  <meta property="og:description" content="
+go 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
 本文使用delve进行调试
- 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
-1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // $GOPATH/test/main.go package main import ( &#34;fmt&#34; ) var ch = make(chan bool) func hello() { fmt.Println(&#34;hello world&#34;) close(ch) } func main() { go hello() &lt;- ch }   定位goroutine的创建函数 由于go除了初始化引导部分是使用手写汇编实现之外，其他的像调度器、内存管理、GC都由runtime实现。所以在这儿就只保留与runtime相关的语句。
-对照我们的工程代码，不难发现
- runtime.newproc 对应 go hello() runtime.chanrecv1 对应 &lt;- ch  1 2 3 4 5 6 7 8 9 10 11  $ dlv debug test Type &#39;help&#39; for list of commands.">
-  <meta name="twitter:description" content="go 1.9.3
-GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
+
+
+创建一个goroutine
+
+一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+">
+  <meta name="twitter:description" content="
+go 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+GOOS=&ldquo;darwin&rdquo;
+
 本文使用delve进行调试
- 创建一个goroutine 一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
-1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18  // …">
+
+
+创建一个goroutine
+
+一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+">
   <meta name="author" content=""/>
   <meta property="og:site_name" content="无远弗届" />
   <meta property="og:url" content="http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/" />
@@ -91,14 +111,13 @@ GOARCH=&ldquo;amd64&rdquo; GOOS=&ldquo;darwin&rdquo;
 <ul>
 <li><a href="#创建一个goroutine">创建一个goroutine</a></li>
 <li><a href="#定位goroutine的创建函数">定位goroutine的创建函数</a></li>
+<li><a href="#runtime-newproc1">runtime.newproc1()</a></li>
 </ul></li>
 </ul></li>
 </ul>
 </nav>
 </aside>
-      
-
-<blockquote>
+      <blockquote>
 <p>go 1.9.3</p>
 
 <p>GOARCH=&ldquo;amd64&rdquo;
@@ -109,7 +128,8 @@ GOOS=&ldquo;darwin&rdquo;</p>
 
 <h3 id="创建一个goroutine">创建一个goroutine</h3>
 
-<p>一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）</p>
+<p>一个go语法就很容易地创建出一个goroutine了。（本文也基于这个程序进行分析）
+</p>
 <div class="highlight"><div class="chroma">
 <table class="lntable"><tr><td class="lntd">
 <pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
@@ -240,7 +260,7 @@ Breakpoint <span class="m">1</span> <span class="nb">set</span> at 0x10331d0 <sp
 <span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
-<p>那就来看看newproc1()。</p>
+<h3 id="runtime-newproc1">runtime.newproc1()</h3>
 
 <p>newproc1() 就比较长了，这儿概括下它做了的事情：</p>
 
