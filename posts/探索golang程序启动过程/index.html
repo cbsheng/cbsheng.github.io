@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>探索golang程序启动过程 - 无远弗届</title>
+  <meta property="og:title" content="探索golang程序启动过程 - 无远弗届" />
+  <meta name="twitter:title" content="探索golang程序启动过程 - 无远弗届" />
+  <meta name="description" content="
+go version == 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+
+GOOS=&ldquo;darwin&rdquo;
+
+
+本文探索下go程序是如何启动起来的。
+">
+  <meta property="og:description" content="
+go version == 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+
+GOOS=&ldquo;darwin&rdquo;
+
+
+本文探索下go程序是如何启动起来的。
+">
+  <meta name="twitter:description" content="
+go version == 1.9.3
+
+GOARCH=&ldquo;amd64&rdquo;
+
+GOOS=&ldquo;darwin&rdquo;
+
+
+本文探索下go程序是如何启动起来的。
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2golang%E7%A8%8B%E5%BA%8F%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">探索golang程序启动过程</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>September 15, 2018</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-folder"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/golang%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-tag"></i>
+            golang源码分析
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#测试工程">测试工程</a></li>
+<li><a href="#使用gdb跟踪查看程序启动流程">使用gdb跟踪查看程序启动流程</a></li>
+<li><a href="#runtime-args">runtime.args</a></li>
+<li><a href="#runtime-osinit">runtime.osinit</a></li>
+<li><a href="#runtime-schedinit">runtime.schedinit</a></li>
+<li><a href="#runtime-newproc">runtime.newproc</a></li>
+<li><a href="#runtime-mstart">runtime.mstart</a></li>
+<li><a href="#参考">参考</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <blockquote>
+<p>go version == 1.9.3</p>
+
+<p>GOARCH=&ldquo;amd64&rdquo;</p>
+
+<p>GOOS=&ldquo;darwin&rdquo;</p>
+</blockquote>
+
+<p>本文探索下go程序是如何启动起来的。
+</p>
+
+<h3 id="测试工程">测试工程</h3>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// $GOPATH/test/main.go
+</span><span class="c1"></span><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+	<span class="s">&#34;fmt&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">fmt</span><span class="p">.</span><span class="nx">Println</span><span class="p">(</span><span class="s">&#34;hello world&#34;</span><span class="p">)</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="使用gdb跟踪查看程序启动流程">使用gdb跟踪查看程序启动流程</h3>
+
+<p>通过设置断点，可以定位到每个方法的源码文件路径</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-bash" data-lang="bash">$ go build main.go
+$ gdb main
+
+GNU gdb <span class="o">(</span>GDB<span class="o">)</span> <span class="m">7</span>.12.1
+Copyright <span class="o">(</span>C<span class="o">)</span> <span class="m">2017</span> Free Software Foundation, Inc.
+<span class="o">(</span>gdb<span class="o">)</span> info files
+Symbols from <span class="s2">&#34;/Users/cbsheng/goproject/src/test/main&#34;</span>.
+Local <span class="nb">exec</span> file:
+	<span class="sb">`</span>/Users/cbsheng/goproject/src/test/main<span class="err">&#39;</span>, file <span class="nb">type</span> mach-o-x86-64.
+	Entry point: 0x1051540  <span class="c1"># 入口点
+</span><span class="c1"></span>	0x0000000001001000 - 0x000000000109352b is .text
+	0x0000000001093540 - 0x00000000010d6e52 is __TEXT.__rodata
+	0x00000000010d6e52 - 0x00000000010d6e52 is __TEXT.__symbol_stub1
+	...
+
+<span class="o">(</span>gdb<span class="o">)</span> b *0x1051540
+Breakpoint <span class="m">1</span> at 0x1051540: file /usr/local/go/src/runtime/rt0_darwin_amd64.s, line <span class="m">8</span>.
+<span class="o">(</span>gdb<span class="o">)</span> b runtime.rt0_go
+Breakpoint <span class="m">2</span> at 0x104dd30: file /usr/local/go/src/runtime/asm_amd64.s, line <span class="m">12</span>.</code></pre></td></tr></table>
+</div>
+</div>
+<p>针对不同的平台都有各自的特定的汇编文件，我这里通过rt0_darwin_amd64.s定位到runtime.rt0_go方法。先来看下asm_amd64.s的源码。文件很大，省略部分代码，留下初始化过程的重要步骤。</p>
+
+<p><strong>注意：</strong>汇编的runtime·schedinit(SB)写法需要转换为runtime.schedinit（即中间的点不同）。官方有<a href="https://golang.org/doc/asm">解释</a>：</p>
+
+<blockquote>
+<p>In Go object files and binaries, the full name of a symbol is the package path followed by a period and the symbol name: <code>fmt.Printf</code> or <code>math/rand.Int</code>. Because the assembler&rsquo;s parser treats period and slash as punctuation, those strings cannot be used directly as identifier names. Instead, the assembler allows the middle dot character U+00B7 and the division slash U+2215 in identifiers and rewrites them to plain period and slash. Within an assembler source file, the symbols above are written as <code>fmt·Printf</code> and <code>math∕rand·Int</code>.</p>
+</blockquote>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span><span class="lnt">60
+</span><span class="lnt">61
+</span><span class="lnt">62
+</span><span class="lnt">63
+</span><span class="lnt">64
+</span><span class="lnt">65
+</span><span class="lnt">66
+</span><span class="lnt">67
+</span><span class="lnt">68
+</span><span class="lnt">69
+</span><span class="lnt">70
+</span><span class="lnt">71
+</span><span class="lnt">72
+</span><span class="lnt">73
+</span><span class="lnt">74
+</span><span class="lnt">75
+</span><span class="lnt">76
+</span><span class="lnt">77
+</span><span class="lnt">78
+</span><span class="lnt">79
+</span><span class="lnt">80
+</span><span class="lnt">81
+</span><span class="lnt">82
+</span><span class="lnt">83
+</span><span class="lnt">84
+</span><span class="lnt">85
+</span><span class="lnt">86
+</span><span class="lnt">87
+</span><span class="lnt">88
+</span><span class="lnt">89
+</span><span class="lnt">90
+</span><span class="lnt">91
+</span><span class="lnt">92
+</span><span class="lnt">93
+</span><span class="lnt">94
+</span><span class="lnt">95
+</span><span class="lnt">96
+</span><span class="lnt">97
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-assembly" data-lang="assembly">// src/runtime/asm_amd64.s
+// 省略头文件
+
+TEXT runtime·rt0_go(SB),NOSPLIT,$0
+    // 省略命令行参数处理的代码
+
+	// 全局的g0实例地址放到DI
+	MOVQ	$runtime·g0(SB), DI
+	LEAQ	(-64*1024+104)(SP), BX
+	// 初始化全局g0实例的stackguard0\stackguard1\stack这三个字段
+	MOVQ	BX, g_stackguard0(DI)
+	MOVQ	BX, g_stackguard1(DI)
+	MOVQ	BX, (g_stack+stack_lo)(DI)
+	MOVQ	SP, (g_stack+stack_hi)(DI)
+
+	// 省略一系列与CPU相关的特性标志位检查的代码
+
+nocpuinfo:
+    // 到这里与CPU相关的检查已设置完毕
+	// if there is an _cgo_init, call it.
+	MOVQ	_cgo_init(SB), AX
+	// 没开启cgo的话就跳转到needtls标签继续执行
+	TESTQ	AX, AX
+	JZ	needtls
+	// g0 already in DI
+	MOVQ	DI, CX	// Win64 uses CX for first parameter
+	MOVQ	$setg_gcc&lt;&gt;(SB), SI
+	CALL	AX
+
+	// _cgo_init 执行完，重新更新下stackguard0/stackguard1
+	MOVQ	$runtime·g0(SB), CX
+	MOVQ	(g_stack+stack_lo)(CX), AX
+	ADDQ	$const__StackGuard, AX
+	MOVQ	AX, g_stackguard0(CX)
+	MOVQ	AX, g_stackguard1(CX)
+
+needtls:
+	// 省略部分用于预编译的代码，因为本文的测试工程环境不会执行这些代码
+
+	// 取全局m0实例的tls字段地址放在DI，并进行设置
+	LEAQ	runtime·m0+m_tls(SB), DI
+	CALL	runtime·settls(SB)
+
+	// store through it, to make sure it works
+	// 经过上面的settls后，需要验证get_tls和g()作用是否符合预期。失败的话，就引发abort
+	get_tls(BX)
+	MOVQ	$0x123, g(BX)
+	MOVQ	runtime·m0+m_tls(SB), AX
+	CMPQ	AX, $0x123
+	JEQ 2(PC)
+	MOVL	AX, 0	// abort
+
+ok:
+	// 验证成功后，把全局g0实例放进tls，并且将g0和m0互相引用
+	get_tls(BX)
+	LEAQ	runtime·g0(SB), CX
+	MOVQ	CX, g(BX)
+	LEAQ	runtime·m0(SB), AX
+
+	// save m-&gt;g0 = g0
+	MOVQ	CX, m_g0(AX)
+	// save m0 to g0-&gt;m
+	MOVQ	AX, g_m(CX)
+
+	CLD				// convention is D is always left cleared
+	CALL	runtime·check(SB)
+
+	MOVL	16(SP), AX		// copy argc
+	MOVL	AX, 0(SP)
+	MOVQ	24(SP), AX		// copy argv
+	MOVQ	AX, 8(SP)
+	// 执行文件的绝对路径初始化
+	CALL	runtime·args(SB)
+	// cpu个数和内存页大小初始化
+	CALL	runtime·osinit(SB)
+	// 命令行参数、环境变量、gc、栈空间、内存管理、所有P实例、HASH算法等初始化
+	CALL	runtime·schedinit(SB)
+
+	// create a new goroutine to start program
+	// runtime.main函数地址放进AX
+	MOVQ	$runtime·mainPC(SB), AX		// entry
+	// 推进栈
+	PUSHQ	AX
+	PUSHQ	$0			// arg size
+	// 新建一个goroutine，该goroutine绑定runtime.main，放在P的本地队列，等待调度
+	CALL	runtime·newproc(SB)
+	POPQ	AX
+	POPQ	AX
+
+	// start this M
+	// 启动M，开始调度goroutine
+	CALL	runtime·mstart(SB)
+
+	MOVL	$0xf1, 0xf1  // crash
+	RET
+
+DATA	runtime·mainPC+0(SB)/8,$runtime·main(SB)</code></pre></td></tr></table>
+</div>
+</div>
+<p>按顺序总结下runtime.rt0_go里几件重要的事：</p>
+
+<ol>
+<li>检查运行平台的CPU，设置好程序运行需要相关标志。</li>
+<li>TLS的初始化。</li>
+<li>runtime.args、runtime.osinit、runtime.schedinit 三个方法做好程序运行需要的各种变量与调度器。</li>
+<li>runtime.newproc创建新的goroutine用于绑定用户写的main方法。</li>
+<li>runtime.mstart开始goroutine的调度。</li>
+</ol>
+
+<p>下面接着针对上面几个runtime函数，粗略探索下干了什么事情。</p>
+
+<h3 id="runtime-args">runtime.args</h3>
+
+<p>只做了一件事，就是把二进制文件的绝对路径找出来，并存在os.executablePath里。</p>
+
+<p>按照本文的测试工程：os.executablePath=$GOPATH/test/main</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// (gdb) b runtime.args
+</span><span class="c1">// Breakpoint 3 at 0x1035040: file /usr/local/go/src/runtime/runtime1.go, line 60.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">args</span><span class="p">(</span><span class="nx">c</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">v</span> <span class="o">**</span><span class="kt">byte</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">argc</span> <span class="p">=</span> <span class="nx">c</span>
+    <span class="nx">argv</span> <span class="p">=</span> <span class="nx">v</span>
+    <span class="nx">sysargs</span><span class="p">(</span><span class="nx">c</span><span class="p">,</span> <span class="nx">v</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">//go:linkname executablePath os.executablePath
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">executablePath</span> <span class="kt">string</span>
+
+<span class="kd">func</span> <span class="nx">sysargs</span><span class="p">(</span><span class="nx">argc</span> <span class="kt">int32</span><span class="p">,</span> <span class="nx">argv</span> <span class="o">**</span><span class="kt">byte</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// skip over argv, envv and the first string will be the path
+</span><span class="c1"></span>    <span class="nx">n</span> <span class="o">:=</span> <span class="nx">argc</span> <span class="o">+</span> <span class="mi">1</span>
+    <span class="k">for</span> <span class="nx">argv_index</span><span class="p">(</span><span class="nx">argv</span><span class="p">,</span> <span class="nx">n</span><span class="p">)</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">n</span><span class="o">++</span>
+    <span class="p">}</span>
+    <span class="nx">executablePath</span> <span class="p">=</span> <span class="nx">gostringnocopy</span><span class="p">(</span><span class="nx">argv_index</span><span class="p">(</span><span class="nx">argv</span><span class="p">,</span> <span class="nx">n</span><span class="o">+</span><span class="mi">1</span><span class="p">))</span>
+
+    <span class="c1">// strip &#34;executable_path=&#34; prefix if available, it&#39;s added after OS X 10.11.
+</span><span class="c1"></span>    <span class="kd">const</span> <span class="nx">prefix</span> <span class="p">=</span> <span class="s">&#34;executable_path=&#34;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nx">executablePath</span><span class="p">)</span> <span class="p">&gt;</span> <span class="nb">len</span><span class="p">(</span><span class="nx">prefix</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="nx">executablePath</span><span class="p">[:</span><span class="nb">len</span><span class="p">(</span><span class="nx">prefix</span><span class="p">)]</span> <span class="o">==</span> <span class="nx">prefix</span> <span class="p">{</span>
+        <span class="nx">executablePath</span> <span class="p">=</span> <span class="nx">executablePath</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="nx">prefix</span><span class="p">):]</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="runtime-osinit">runtime.osinit</h3>
+
+<p>获取CPU核数与内存页大小。按照本文的测试工程：</p>
+
+<ul>
+<li>runtime.ncpu = 8</li>
+<li>runtime.physPageSize = 4096</li>
+</ul>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// (gdb) b runtime.osinit
+</span><span class="c1">// Breakpoint 4 at 0x10247e0: file /usr/local/go/src/runtime/os_darwin.go, line 48.
+</span><span class="c1"></span>
+<span class="c1">// BSD interface for threading.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">osinit</span><span class="p">()</span> <span class="p">{</span>
+    <span class="c1">// bsdthread_register delayed until end of goenvs so that we
+</span><span class="c1"></span>    <span class="c1">// can look at the environment first.
+</span><span class="c1"></span>
+    <span class="nx">ncpu</span> <span class="p">=</span> <span class="nx">getncpu</span><span class="p">()</span>
+
+    <span class="nx">physPageSize</span> <span class="p">=</span> <span class="nx">getPageSize</span><span class="p">()</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="runtime-schedinit">runtime.schedinit</h3>
+
+<p>这个直接在代码中注释吧</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span><span class="lnt">60
+</span><span class="lnt">61
+</span><span class="lnt">62
+</span><span class="lnt">63
+</span><span class="lnt">64
+</span><span class="lnt">65
+</span><span class="lnt">66
+</span><span class="lnt">67
+</span><span class="lnt">68
+</span><span class="lnt">69
+</span><span class="lnt">70
+</span><span class="lnt">71
+</span><span class="lnt">72
+</span><span class="lnt">73
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// (gdb) b runtime.schedinit
+</span><span class="c1">// Breakpoint 5 at 0x1029b60: file /usr/local/go/src/runtime/proc.go, line 458.
+</span><span class="c1"></span>
+<span class="c1">// The bootstrap sequence is:
+</span><span class="c1">//
+</span><span class="c1">//	call osinit
+</span><span class="c1">//	call schedinit
+</span><span class="c1">//	make &amp; queue new G
+</span><span class="c1">//	call runtime·mstart
+</span><span class="c1">//
+</span><span class="c1">// The new G calls runtime·main.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">schedinit</span><span class="p">()</span> <span class="p">{</span>
+	<span class="c1">// raceinit must be the first call to race detector.
+</span><span class="c1"></span>	<span class="c1">// In particular, it must be done before mallocinit below calls racemapshadow.
+</span><span class="c1"></span>	<span class="c1">// 从TLS中获取g实例
+</span><span class="c1"></span>    <span class="nx">_g_</span> <span class="o">:=</span> <span class="nx">getg</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="nx">raceenabled</span> <span class="p">{</span>
+        <span class="nx">_g_</span><span class="p">.</span><span class="nx">racectx</span><span class="p">,</span> <span class="nx">raceprocctx0</span> <span class="p">=</span> <span class="nx">raceinit</span><span class="p">()</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 设置全局线程数上限
+</span><span class="c1"></span>    <span class="nx">sched</span><span class="p">.</span><span class="nx">maxmcount</span> <span class="p">=</span> <span class="mi">10000</span>
+
+    <span class="c1">// 初始化一系列函数所在的PC计数器，用于traceback
+</span><span class="c1"></span>    <span class="nx">tracebackinit</span><span class="p">()</span>
+    <span class="c1">// 貌似是验证链接器符号的正确性
+</span><span class="c1"></span>    <span class="nx">moduledataverify</span><span class="p">()</span>
+    <span class="c1">// 栈的初始化
+</span><span class="c1"></span>    <span class="nx">stackinit</span><span class="p">()</span>
+    <span class="c1">// 内存分配器初始化
+</span><span class="c1"></span>    <span class="nx">mallocinit</span><span class="p">()</span>
+    <span class="nx">mcommoninit</span><span class="p">(</span><span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">)</span>
+    <span class="c1">// 初始化AES HASH算法
+</span><span class="c1"></span>    <span class="nx">alginit</span><span class="p">()</span>       <span class="c1">// maps must not be used before this call
+</span><span class="c1"></span>    <span class="nx">modulesinit</span><span class="p">()</span>   <span class="c1">// provides activeModules
+</span><span class="c1"></span>    <span class="nx">typelinksinit</span><span class="p">()</span> <span class="c1">// uses maps, activeModules
+</span><span class="c1"></span>    <span class="nx">itabsinit</span><span class="p">()</span>     <span class="c1">// uses activeModules
+</span><span class="c1"></span>
+    <span class="nx">msigsave</span><span class="p">(</span><span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">)</span>
+    <span class="nx">initSigmask</span> <span class="p">=</span> <span class="nx">_g_</span><span class="p">.</span><span class="nx">m</span><span class="p">.</span><span class="nx">sigmask</span>
+
+    <span class="c1">// 获取命令行参数
+</span><span class="c1"></span>    <span class="c1">// 例如: ./$GOPATH/test/main test1 test2
+</span><span class="c1"></span>    <span class="c1">// 执行goargs得到runtime.argslice = []string len: 3, cap: 3, [&#34;main&#34;,&#34;test1&#34;,&#34;test2&#34;]
+</span><span class="c1"></span>    <span class="nx">goargs</span><span class="p">()</span>
+    <span class="c1">// 获取所有的环境变量
+</span><span class="c1"></span>    <span class="nx">goenvs</span><span class="p">()</span>
+    <span class="nx">parsedebugvars</span><span class="p">()</span>
+    <span class="c1">// gc初始化
+</span><span class="c1"></span>    <span class="nx">gcinit</span><span class="p">()</span>
+
+    <span class="nx">sched</span><span class="p">.</span><span class="nx">lastpoll</span> <span class="p">=</span> <span class="nb">uint64</span><span class="p">(</span><span class="nx">nanotime</span><span class="p">())</span>
+
+    <span class="c1">// P个数检查
+</span><span class="c1"></span>    <span class="nx">procs</span> <span class="o">:=</span> <span class="nx">ncpu</span>
+    <span class="k">if</span> <span class="nx">n</span><span class="p">,</span> <span class="nx">ok</span> <span class="o">:=</span> <span class="nx">atoi32</span><span class="p">(</span><span class="nx">gogetenv</span><span class="p">(</span><span class="s">&#34;GOMAXPROCS&#34;</span><span class="p">));</span> <span class="nx">ok</span> <span class="o">&amp;&amp;</span> <span class="nx">n</span> <span class="p">&gt;</span> <span class="mi">0</span> <span class="p">{</span>
+        <span class="nx">procs</span> <span class="p">=</span> <span class="nx">n</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="nx">procs</span> <span class="p">&gt;</span> <span class="nx">_MaxGomaxprocs</span> <span class="p">{</span>
+        <span class="nx">procs</span> <span class="p">=</span> <span class="nx">_MaxGomaxprocs</span>
+    <span class="p">}</span>
+	<span class="c1">// 所有P的初始化
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">procresize</span><span class="p">(</span><span class="nx">procs</span><span class="p">)</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">throw</span><span class="p">(</span><span class="s">&#34;unknown runnable goroutine during bootstrap&#34;</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="nx">buildVersion</span> <span class="o">==</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+        <span class="c1">// Condition should never trigger. This code just serves
+</span><span class="c1"></span>        <span class="c1">// to ensure runtime·buildVersion is kept in the resulting binary.
+</span><span class="c1"></span>        <span class="nx">buildVersion</span> <span class="p">=</span> <span class="s">&#34;unknown&#34;</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="runtime-newproc">runtime.newproc</h3>
+
+<p>参考<a href="http://cbsheng.github.io/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/">探索goroutine的创建</a></p>
+
+<h3 id="runtime-mstart">runtime.mstart</h3>
+
+<p>mstart方法主要的执行路径是：</p>
+
+<p><strong>mstart -&gt; mstart1 -&gt; schedule -&gt; execute</strong></p>
+
+<ol>
+<li>mstart做一些栈相关的检查，然后就调用mstart1。</li>
+<li>mstart1先做一些初始化与M相关的工作，例如是信号栈和信号处理函数的初始化。最后调用schedule。</li>
+<li>schedule逻辑是这四个方法里最复杂的。简单来说，就是要找出一个可运行的G，不管是从P本地的G队列、全局调度器的G队列、GC worker、因IO阻塞的G、甚至从别的P里偷。然后传给execute运行。</li>
+<li>execute对传进来的G设置好相关的状态后，就加载G自身记录着的PC、SP等寄存器信息，恢复现场继续执行。</li>
+</ol>
+
+<h3 id="参考">参考</h3>
+
+<p><a href="http://blog.jobbole.com/93100/">Go语言内幕（5）：运行时启动过程</a></p>
+
+<p><a href="https://book.douban.com/subject/26832468/">Go语言学习笔记</a></p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E6%8E%A2%E7%B4%A2goroutine%E7%9A%84%E5%88%9B%E5%BB%BA/" data-toggle="tooltip" data-placement="top" title="探索goroutine的创建">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
