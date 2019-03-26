@@ -7,10 +7,24 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
-    <lastBuildDate>Sat, 15 Sep 2018 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 26 Mar 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>fasthttp源码&amp;最佳实践分析</title>
+      <link>http://cbsheng.github.io/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/</link>
+      <pubDate>Tue, 26 Mar 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/</guid>
+      <description>fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。
+同时fasthttp也给出自己的最佳实践。个人理解这些实践也算是gopher的基本功。
+让我们来看看fasthttp在源码中是如何应用这些最佳实践的。
+减少[]byte的分配，尽量去复用它们 两种方式进行复用：
+ sync.Pool slice = slice[:0]。所有的类型的Reset方法，均使用此方式。例如类型URI、Args、ByteBuffer、Cookie、RequestHeader、ResponseHeader等。  fasthttp里共有35个地方使用了sync.Pool。sync.Pool除了降低GC的压力，还能复用对象，减少内存分配。
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59  // 例如类型Server type Server struct { // .</description>
+    </item>
     
     <item>
       <title>探索golang程序启动过程</title>

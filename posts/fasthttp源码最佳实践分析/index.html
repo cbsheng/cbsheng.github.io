@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>fasthttp源码&amp;最佳实践分析 - 无远弗届</title>
+  <meta property="og:title" content="fasthttp源码&amp;最佳实践分析 - 无远弗届" />
+  <meta name="twitter:title" content="fasthttp源码&amp;最佳实践分析 - 无远弗届" />
+  <meta name="description" content="fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。
+同时fasthttp也给出自己的最佳实践。个人理解这些实践也算是gopher的基本功。
+让我们来看看fasthttp在源码中是如何应用这些最佳实践的。
+减少[]byte的分配，尽量去复用它们 两种方式进行复用：
+ sync.Pool slice = slice[:0]。所有的类型的Reset方法，均使用此方式。例如类型URI、Args、ByteBuffer、Cookie、RequestHeader、ResponseHeader等。  fasthttp里共有35个地方使用了sync.Pool。sync.Pool除了降低GC的压力，还能复用对象，减少内存分配。
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59  // 例如类型Server type Server struct { // .">
+  <meta property="og:description" content="fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。
+同时fasthttp也给出自己的最佳实践。个人理解这些实践也算是gopher的基本功。
+让我们来看看fasthttp在源码中是如何应用这些最佳实践的。
+减少[]byte的分配，尽量去复用它们 两种方式进行复用：
+ sync.Pool slice = slice[:0]。所有的类型的Reset方法，均使用此方式。例如类型URI、Args、ByteBuffer、Cookie、RequestHeader、ResponseHeader等。  fasthttp里共有35个地方使用了sync.Pool。sync.Pool除了降低GC的压力，还能复用对象，减少内存分配。
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59  // 例如类型Server type Server struct { // .">
+  <meta name="twitter:description" content="fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。
+同时fasthttp也给出自己的最佳实践。个人理解这些实践也算是gopher的基本功。
+让我们来看看fasthttp在源码中是如何应用这些最佳实践的。
+减少[]byte的分配，尽量去复用它们 两种方式进行复用：
+ sync.Pool slice = slice[:0]。所有的类型 …">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">fasthttp源码&amp;最佳实践分析</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>March 26, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/go/">
+            <i class="fas fa-tag"></i>
+            go
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/fasthttp/">
+            <i class="fas fa-tag"></i>
+            fasthttp
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li><a href="#减少-byte的分配-尽量去复用它们">减少[]byte的分配，尽量去复用它们</a></li>
+<li><a href="#方法参数尽量用-byte-纯写场景可避免用bytes-buffer">方法参数尽量用[]byte. 纯写场景可避免用bytes.Buffer</a></li>
+<li><a href="#不放过能复用内存的地方">不放过能复用内存的地方</a></li>
+<li><a href="#避免string与-byte转换开销">避免string与[]byte转换开销</a></li>
+<li><a href="#总结">总结</a></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      
+
+<p>fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。</p>
+
+<p>同时fasthttp也给出自己的<a href="https://github.com/valyala/fasthttp#fasthttp-best-practices">最佳实践</a>。个人理解这些实践也算是gopher的基本功。</p>
+
+<p>让我们来看看fasthttp在源码中是如何应用这些最佳实践的。</p>
+
+<h2 id="减少-byte的分配-尽量去复用它们">减少[]byte的分配，尽量去复用它们</h2>
+
+<p>两种方式进行复用：</p>
+
+<ol>
+<li>sync.Pool</li>
+<li>slice = slice[:0]。所有的类型的Reset方法，均使用此方式。例如类型URI、Args、ByteBuffer、Cookie、RequestHeader、ResponseHeader等。</li>
+</ol>
+
+<p>fasthttp里共有35个地方使用了sync.Pool。sync.Pool除了降低GC的压力，还能复用对象，减少内存分配。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 例如类型Server
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Server</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>    <span class="nx">ctxPool</span>        <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span> <span class="c1">// 存RequestCtx对象
+</span><span class="c1"></span>	<span class="nx">readerPool</span>     <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span> <span class="c1">// 存bufio对象，用于读HTTP Request
+</span><span class="c1"></span>	<span class="nx">writerPool</span>     <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span> <span class="c1">// 存bufio对象，用于写HTTP Request
+</span><span class="c1"></span>	<span class="nx">hijackConnPool</span> <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span>
+	<span class="nx">bytePool</span>       <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span>
+<span class="p">}</span>
+
+
+<span class="c1">// 例如cookies
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">cookiePool</span> <span class="p">=</span> <span class="o">&amp;</span><span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span><span class="p">{</span>
+	<span class="nx">New</span><span class="p">:</span> <span class="kd">func</span><span class="p">()</span> <span class="kd">interface</span><span class="p">{}</span> <span class="p">{</span>
+		<span class="k">return</span> <span class="o">&amp;</span><span class="nx">Cookie</span><span class="p">{}</span>
+	<span class="p">},</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">AcquireCookie</span><span class="p">()</span> <span class="o">*</span><span class="nx">Cookie</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="nx">cookiePool</span><span class="p">.</span><span class="nx">Get</span><span class="p">().(</span><span class="o">*</span><span class="nx">Cookie</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">ReleaseCookie</span><span class="p">(</span><span class="nx">c</span> <span class="o">*</span><span class="nx">Cookie</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">Reset</span><span class="p">()</span>
+	<span class="nx">cookiePool</span><span class="p">.</span><span class="nx">Put</span><span class="p">(</span><span class="nx">c</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// 例如workPool. 每个请求以一个新的goroutine运行。就是workpool做的调度
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">workerPool</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>	<span class="nx">workerChanPool</span> <span class="nx">sync</span><span class="p">.</span><span class="nx">Pool</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">wp</span> <span class="o">*</span><span class="nx">workerPool</span><span class="p">)</span> <span class="nx">getCh</span><span class="p">()</span> <span class="o">*</span><span class="nx">workerChan</span> <span class="p">{</span>
+	<span class="kd">var</span> <span class="nx">ch</span> <span class="o">*</span><span class="nx">workerChan</span>
+	<span class="c1">// ...
+</span><span class="c1"></span>
+	<span class="k">if</span> <span class="nx">ch</span> <span class="o">==</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="p">!</span><span class="nx">createWorker</span> <span class="p">{</span>
+            <span class="c1">// 已经达到worker数量上限，不允许创建了
+</span><span class="c1"></span>			<span class="k">return</span> <span class="kc">nil</span>
+		<span class="p">}</span>
+        <span class="c1">// 尝试复用旧worker
+</span><span class="c1"></span>		<span class="nx">vch</span> <span class="o">:=</span> <span class="nx">wp</span><span class="p">.</span><span class="nx">workerChanPool</span><span class="p">.</span><span class="nx">Get</span><span class="p">()</span>
+		<span class="k">if</span> <span class="nx">vch</span> <span class="o">==</span> <span class="kc">nil</span> <span class="p">{</span>
+			<span class="nx">vch</span> <span class="p">=</span> <span class="o">&amp;</span><span class="nx">workerChan</span><span class="p">{</span>
+				<span class="nx">ch</span><span class="p">:</span> <span class="nb">make</span><span class="p">(</span><span class="kd">chan</span> <span class="nx">net</span><span class="p">.</span><span class="nx">Conn</span><span class="p">,</span> <span class="nx">workerChanCap</span><span class="p">),</span>
+			<span class="p">}</span>
+		<span class="p">}</span>
+		<span class="nx">ch</span> <span class="p">=</span> <span class="nx">vch</span><span class="p">.(</span><span class="o">*</span><span class="nx">workerChan</span><span class="p">)</span>
+        <span class="c1">// 创建新的goroutine处理请求
+</span><span class="c1"></span>		<span class="k">go</span> <span class="kd">func</span><span class="p">()</span> <span class="p">{</span>
+			<span class="nx">wp</span><span class="p">.</span><span class="nx">workerFunc</span><span class="p">(</span><span class="nx">ch</span><span class="p">)</span>
+            <span class="c1">// 用完了返回去
+</span><span class="c1"></span>			<span class="nx">wp</span><span class="p">.</span><span class="nx">workerChanPool</span><span class="p">.</span><span class="nx">Put</span><span class="p">(</span><span class="nx">vch</span><span class="p">)</span>
+		<span class="p">}()</span>
+	<span class="p">}</span>
+	<span class="k">return</span> <span class="nx">ch</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>还有复用已经分配的[]byte。</p>
+
+<p><code>s = s[:0]</code>和<code>s = append(s[:0], b…)</code>这两种复用方式，总共出现了191次。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 清空 URI
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">u</span> <span class="o">*</span><span class="nx">URI</span><span class="p">)</span> <span class="nx">Reset</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">u</span><span class="p">.</span><span class="nx">pathOriginal</span> <span class="p">=</span> <span class="nx">u</span><span class="p">.</span><span class="nx">pathOriginal</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">u</span><span class="p">.</span><span class="nx">scheme</span> <span class="p">=</span> <span class="nx">u</span><span class="p">.</span><span class="nx">scheme</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">u</span><span class="p">.</span><span class="nx">path</span> <span class="p">=</span> <span class="nx">u</span><span class="p">.</span><span class="nx">path</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+    <span class="c1">// ....
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="c1">// 清空 ResponseHeader
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">h</span> <span class="o">*</span><span class="nx">ResponseHeader</span><span class="p">)</span> <span class="nx">resetSkipNormalize</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">noHTTP11</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">connectionClose</span> <span class="p">=</span> <span class="kc">false</span>
+
+	<span class="nx">h</span><span class="p">.</span><span class="nx">statusCode</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">contentLength</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">contentLengthBytes</span> <span class="p">=</span> <span class="nx">h</span><span class="p">.</span><span class="nx">contentLengthBytes</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+
+	<span class="nx">h</span><span class="p">.</span><span class="nx">contentType</span> <span class="p">=</span> <span class="nx">h</span><span class="p">.</span><span class="nx">contentType</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">server</span> <span class="p">=</span> <span class="nx">h</span><span class="p">.</span><span class="nx">server</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+
+	<span class="nx">h</span><span class="p">.</span><span class="nx">h</span> <span class="p">=</span> <span class="nx">h</span><span class="p">.</span><span class="nx">h</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">h</span><span class="p">.</span><span class="nx">cookies</span> <span class="p">=</span> <span class="nx">h</span><span class="p">.</span><span class="nx">cookies</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+<span class="p">}</span>
+
+<span class="c1">// 清空Cookies
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">c</span> <span class="o">*</span><span class="nx">Cookie</span><span class="p">)</span> <span class="nx">Reset</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">key</span> <span class="p">=</span> <span class="nx">c</span><span class="p">.</span><span class="nx">key</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">value</span> <span class="p">=</span> <span class="nx">c</span><span class="p">.</span><span class="nx">value</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">expire</span> <span class="p">=</span> <span class="nx">zeroTime</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">maxAge</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">domain</span> <span class="p">=</span> <span class="nx">c</span><span class="p">.</span><span class="nx">domain</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">path</span> <span class="p">=</span> <span class="nx">c</span><span class="p">.</span><span class="nx">path</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">httpOnly</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">secure</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">sameSite</span> <span class="p">=</span> <span class="nx">CookieSameSiteDisabled</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">c</span> <span class="o">*</span><span class="nx">Cookie</span><span class="p">)</span> <span class="nx">SetKey</span><span class="p">(</span><span class="nx">key</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">c</span><span class="p">.</span><span class="nx">key</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">key</span><span class="p">[:</span><span class="mi">0</span><span class="p">],</span> <span class="nx">key</span><span class="o">...</span><span class="p">)</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h2 id="方法参数尽量用-byte-纯写场景可避免用bytes-buffer">方法参数尽量用[]byte. 纯写场景可避免用bytes.Buffer</h2>
+
+<p>方法参数使用[]byte，这样做避免了[]byte到string转换时带来的内存分配和拷贝。毕竟本来从net.Conn读出来的数据也是[]byte类型。</p>
+
+<p>某些地方确实想传string类型参数，fasthttp也提供XXString()方法。</p>
+
+<p>String方法背后是利用了<code>a = append(a, string…)</code>。这样做不会造成string到[]byte的转换(该结论通过查看汇编得到，汇编里并没用到runtime.stringtoslicebyte方法)</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 例如写Response时，提供专门的String方法
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">resp</span> <span class="o">*</span><span class="nx">Response</span><span class="p">)</span> <span class="nx">SetBodyString</span><span class="p">(</span><span class="nx">body</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+	<span class="c1">// ...
+</span><span class="c1"></span>	<span class="nx">bodyBuf</span><span class="p">.</span><span class="nx">WriteString</span><span class="p">(</span><span class="nx">body</span><span class="p">)</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>上面的bodyBuf变量类型为ByteBuffer，来源于作者另外写的一个库，<a href="https://github.com/valyala/bytebufferpool">bytebufferpool</a>。</p>
+
+<p>正如介绍一样，库的主要目标是反对多余的内存分配行为。与标准库的bytes.Buffer类型对比，性能高30%。</p>
+
+<p>但ByteBuffer只提供了write类操作。适合高频写场景。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 先看下标准库bytes.Buffer是如何增长底层slice的
+</span><span class="c1">// 增长slice时，都会调用grow方法
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">Buffer</span><span class="p">)</span> <span class="nx">grow</span><span class="p">(</span><span class="nx">n</span> <span class="kt">int</span><span class="p">)</span> <span class="kt">int</span> <span class="p">{</span>
+	<span class="c1">// ...
+</span><span class="c1"></span>	<span class="k">if</span> <span class="nx">m</span><span class="o">+</span><span class="nx">n</span> <span class="o">&lt;=</span> <span class="nb">cap</span><span class="p">(</span><span class="nx">b</span><span class="p">.</span><span class="nx">buf</span><span class="p">)</span><span class="o">/</span><span class="mi">2</span> <span class="p">{</span>
+		<span class="nb">copy</span><span class="p">(</span><span class="nx">b</span><span class="p">.</span><span class="nx">buf</span><span class="p">[:],</span> <span class="nx">b</span><span class="p">.</span><span class="nx">buf</span><span class="p">[</span><span class="nx">b</span><span class="p">.</span><span class="nx">off</span><span class="p">:])</span>
+	<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+		<span class="c1">// Not enough space anywhere, we need to allocate.
+</span><span class="c1"></span>		<span class="c1">// 通过makeSlice获取新的slice
+</span><span class="c1"></span>        <span class="nx">buf</span> <span class="o">:=</span> <span class="nx">makeSlice</span><span class="p">(</span><span class="mi">2</span><span class="o">*</span><span class="nb">cap</span><span class="p">(</span><span class="nx">b</span><span class="p">.</span><span class="nx">buf</span><span class="p">)</span> <span class="o">+</span> <span class="nx">n</span><span class="p">)</span>
+        <span class="c1">// 而且还要拷贝
+</span><span class="c1"></span>		<span class="nb">copy</span><span class="p">(</span><span class="nx">buf</span><span class="p">,</span> <span class="nx">b</span><span class="p">.</span><span class="nx">buf</span><span class="p">[</span><span class="nx">b</span><span class="p">.</span><span class="nx">off</span><span class="p">:])</span>
+		<span class="nx">b</span><span class="p">.</span><span class="nx">buf</span> <span class="p">=</span> <span class="nx">buf</span>
+	<span class="p">}</span>
+    <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">makeSlice</span><span class="p">(</span><span class="nx">n</span> <span class="kt">int</span><span class="p">)</span> <span class="p">[]</span><span class="kt">byte</span> <span class="p">{</span>
+    <span class="c1">// maekSlice 是直接分配出新的slice，没有复用的意思
+</span><span class="c1"></span>	<span class="k">return</span> <span class="nb">make</span><span class="p">([]</span><span class="kt">byte</span><span class="p">,</span> <span class="nx">n</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// 再看ByteBuffer的做法
+</span><span class="c1">// 通过复用减少内存分配，下次复用
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">ByteBuffer</span><span class="p">)</span> <span class="nx">Reset</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">b</span><span class="p">.</span><span class="nx">B</span> <span class="p">=</span> <span class="nx">b</span><span class="p">.</span><span class="nx">B</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+<span class="p">}</span>
+
+<span class="c1">// 提供专门String方法，通过append避免string到[]byte转换带来的内存分配和拷贝
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">ByteBuffer</span><span class="p">)</span> <span class="nx">WriteString</span><span class="p">(</span><span class="nx">s</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="kt">int</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">b</span><span class="p">.</span><span class="nx">B</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">b</span><span class="p">.</span><span class="nx">B</span><span class="p">,</span> <span class="nx">s</span><span class="o">...</span><span class="p">)</span>
+	<span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nx">s</span><span class="p">),</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="c1">// 如果写buffer的内容很大呢？增长的事情交给append
+</span><span class="c1">// 但因为Reset()做了复用，所以cap足够情况下，append速度会很快
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">ByteBuffer</span><span class="p">)</span> <span class="nx">Write</span><span class="p">(</span><span class="nx">p</span> <span class="p">[]</span><span class="kt">byte</span><span class="p">)</span> <span class="p">(</span><span class="kt">int</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">b</span><span class="p">.</span><span class="nx">B</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">b</span><span class="p">.</span><span class="nx">B</span><span class="p">,</span> <span class="nx">p</span><span class="o">...</span><span class="p">)</span>
+	<span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nx">p</span><span class="p">),</span> <span class="kc">nil</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>Request和Response都是用ByteBuffer存body的。清空body是把ByteBuffer交还给pool，方便复用。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">var</span> <span class="p">(</span>
+	<span class="nx">responseBodyPool</span> <span class="nx">bytebufferpool</span><span class="p">.</span><span class="nx">Pool</span>
+	<span class="nx">requestBodyPool</span>  <span class="nx">bytebufferpool</span><span class="p">.</span><span class="nx">Pool</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">req</span> <span class="o">*</span><span class="nx">Request</span><span class="p">)</span> <span class="nx">ResetBody</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">req</span><span class="p">.</span><span class="nx">RemoveMultipartFormFiles</span><span class="p">()</span>
+	<span class="nx">req</span><span class="p">.</span><span class="nx">closeBodyStream</span><span class="p">()</span>
+	<span class="k">if</span> <span class="nx">req</span><span class="p">.</span><span class="nx">body</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="nx">req</span><span class="p">.</span><span class="nx">keepBodyBuffer</span> <span class="p">{</span>
+			<span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">Reset</span><span class="p">()</span>
+		<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+			<span class="nx">requestBodyPool</span><span class="p">.</span><span class="nx">Put</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">)</span>
+			<span class="nx">req</span><span class="p">.</span><span class="nx">body</span> <span class="p">=</span> <span class="kc">nil</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">resp</span> <span class="o">*</span><span class="nx">Response</span><span class="p">)</span> <span class="nx">ResetBody</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">resp</span><span class="p">.</span><span class="nx">bodyRaw</span> <span class="p">=</span> <span class="kc">nil</span>
+	<span class="nx">resp</span><span class="p">.</span><span class="nx">closeBodyStream</span><span class="p">()</span>
+	<span class="k">if</span> <span class="nx">resp</span><span class="p">.</span><span class="nx">body</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+		<span class="k">if</span> <span class="nx">resp</span><span class="p">.</span><span class="nx">keepBodyBuffer</span> <span class="p">{</span>
+			<span class="nx">resp</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">Reset</span><span class="p">()</span>
+		<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+			<span class="nx">responseBodyPool</span><span class="p">.</span><span class="nx">Put</span><span class="p">(</span><span class="nx">resp</span><span class="p">.</span><span class="nx">body</span><span class="p">)</span>
+			<span class="nx">resp</span><span class="p">.</span><span class="nx">body</span> <span class="p">=</span> <span class="kc">nil</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h2 id="不放过能复用内存的地方">不放过能复用内存的地方</h2>
+
+<p>有些地方需要kv型数据，一般使用map[string]string。但map不利于复用。所以fasthttp使用slice来实现了map</p>
+
+<p>缺点是查询时间复杂度O(n)。</p>
+
+<p>可key数量不多时，slice的方式能够很好地减少内存分配，尤其在大并发场景下。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">type</span> <span class="nx">argsKV</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">key</span>     <span class="p">[]</span><span class="kt">byte</span>
+	<span class="nx">value</span>   <span class="p">[]</span><span class="kt">byte</span>
+	<span class="nx">noValue</span> <span class="kt">bool</span>
+<span class="p">}</span>
+
+<span class="c1">// 增加新的kv
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">appendArg</span><span class="p">(</span><span class="nx">args</span> <span class="p">[]</span><span class="nx">argsKV</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">value</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">noValue</span> <span class="kt">bool</span><span class="p">)</span> <span class="p">[]</span><span class="nx">argsKV</span> <span class="p">{</span>
+	<span class="kd">var</span> <span class="nx">kv</span> <span class="o">*</span><span class="nx">argsKV</span>
+	<span class="nx">args</span><span class="p">,</span> <span class="nx">kv</span> <span class="p">=</span> <span class="nx">allocArg</span><span class="p">(</span><span class="nx">args</span><span class="p">)</span>
+    <span class="c1">// 复用原来key的内存空间
+</span><span class="c1"></span>	<span class="nx">kv</span><span class="p">.</span><span class="nx">key</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">kv</span><span class="p">.</span><span class="nx">key</span><span class="p">[:</span><span class="mi">0</span><span class="p">],</span> <span class="nx">key</span><span class="o">...</span><span class="p">)</span>
+	<span class="k">if</span> <span class="nx">noValue</span> <span class="p">{</span>
+		<span class="nx">kv</span><span class="p">.</span><span class="nx">value</span> <span class="p">=</span> <span class="nx">kv</span><span class="p">.</span><span class="nx">value</span><span class="p">[:</span><span class="mi">0</span><span class="p">]</span>
+	<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="c1">// 复用原来value的内存空间
+</span><span class="c1"></span>		<span class="nx">kv</span><span class="p">.</span><span class="nx">value</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">kv</span><span class="p">.</span><span class="nx">value</span><span class="p">[:</span><span class="mi">0</span><span class="p">],</span> <span class="nx">value</span><span class="o">...</span><span class="p">)</span>
+	<span class="p">}</span>
+	<span class="nx">kv</span><span class="p">.</span><span class="nx">noValue</span> <span class="p">=</span> <span class="nx">noValue</span>
+	<span class="k">return</span> <span class="nx">args</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">allocArg</span><span class="p">(</span><span class="nx">h</span> <span class="p">[]</span><span class="nx">argsKV</span><span class="p">)</span> <span class="p">([]</span><span class="nx">argsKV</span><span class="p">,</span> <span class="o">*</span><span class="nx">argsKV</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">n</span> <span class="o">:=</span> <span class="nb">len</span><span class="p">(</span><span class="nx">h</span><span class="p">)</span>
+	<span class="k">if</span> <span class="nb">cap</span><span class="p">(</span><span class="nx">h</span><span class="p">)</span> <span class="p">&gt;</span> <span class="nx">n</span> <span class="p">{</span>
+        <span class="c1">// 复用底层数组空间，不用分配
+</span><span class="c1"></span>		<span class="nx">h</span> <span class="p">=</span> <span class="nx">h</span><span class="p">[:</span><span class="nx">n</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span>
+	<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+        <span class="c1">// 空间不足再分配
+</span><span class="c1"></span>		<span class="nx">h</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">h</span><span class="p">,</span> <span class="nx">argsKV</span><span class="p">{})</span>
+	<span class="p">}</span>
+	<span class="k">return</span> <span class="nx">h</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">h</span><span class="p">[</span><span class="nx">n</span><span class="p">]</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h2 id="避免string与-byte转换开销">避免string与[]byte转换开销</h2>
+
+<p>这两种类型转换是带内存分配与拷贝开销的，但有一种办法(trick)能够避免开销。利用了string和slice在runtime里结构只差一个Cap字段实现的。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">type</span> <span class="nx">StringHeader</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">Data</span> <span class="kt">uintptr</span>
+	<span class="nx">Len</span>  <span class="kt">int</span>
+<span class="p">}</span>
+
+<span class="kd">type</span> <span class="nx">SliceHeader</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">Data</span> <span class="kt">uintptr</span>
+	<span class="nx">Len</span>  <span class="kt">int</span>
+	<span class="nx">Cap</span>  <span class="kt">int</span>
+<span class="p">}</span>
+
+<span class="c1">// []byte -&gt; string
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">b2s</span><span class="p">(</span><span class="nx">b</span> <span class="p">[]</span><span class="kt">byte</span><span class="p">)</span> <span class="kt">string</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="kt">string</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">b</span><span class="p">))</span>
+<span class="p">}</span>
+
+<span class="c1">// string -&gt; []byte
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">s2b</span><span class="p">(</span><span class="nx">s</span> <span class="kt">string</span><span class="p">)</span> <span class="p">[]</span><span class="kt">byte</span> <span class="p">{</span>
+	<span class="nx">sh</span> <span class="o">:=</span> <span class="p">(</span><span class="o">*</span><span class="nx">reflect</span><span class="p">.</span><span class="nx">StringHeader</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">s</span><span class="p">))</span>
+	<span class="nx">bh</span> <span class="o">:=</span> <span class="nx">reflect</span><span class="p">.</span><span class="nx">SliceHeader</span><span class="p">{</span>
+		<span class="nx">Data</span><span class="p">:</span> <span class="nx">sh</span><span class="p">.</span><span class="nx">Data</span><span class="p">,</span>
+		<span class="nx">Len</span><span class="p">:</span>  <span class="nx">sh</span><span class="p">.</span><span class="nx">Len</span><span class="p">,</span>
+		<span class="nx">Cap</span><span class="p">:</span>  <span class="nx">sh</span><span class="p">.</span><span class="nx">Len</span><span class="p">,</span>
+	<span class="p">}</span>
+	<span class="k">return</span> <span class="o">*</span><span class="p">(</span><span class="o">*</span><span class="p">[]</span><span class="kt">byte</span><span class="p">)(</span><span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">bh</span><span class="p">))</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>注意这种做法带来的问题：</p>
+
+<ol>
+<li>经常转换出来的[]byte不能有修改操作</li>
+<li>依赖了XXHeader结构，更改结构会收到影响</li>
+<li>如果unsafe.Pointer作用被更改，也收到影响</li>
+</ol>
+
+<h2 id="总结">总结</h2>
+
+<ol>
+<li>fasthttp避免绝大部分多余的内存分配行为，能复用绝不分配。</li>
+<li>尽量避免[]byte与string之间转换带来的开销。</li>
+<li>巧用[]byte相关的<a href="https://github.com/valyala/fasthttp#tricks-with-byte-buffers">特性</a></li>
+</ol>
+
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E6%8E%A2%E7%B4%A2golang%E7%A8%8B%E5%BA%8F%E5%90%AF%E5%8A%A8%E8%BF%87%E7%A8%8B/" data-toggle="tooltip" data-placement="top" title="探索golang程序启动过程">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
