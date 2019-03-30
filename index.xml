@@ -7,10 +7,20 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
-    <lastBuildDate>Tue, 26 Mar 2019 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 30 Mar 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>Redis源码分析之sds对象</title>
+      <link>http://cbsheng.github.io/posts/redis%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B9%8Bsds%E5%AF%B9%E8%B1%A1/</link>
+      <pubDate>Sat, 30 Mar 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/redis%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B9%8Bsds%E5%AF%B9%E8%B1%A1/</guid>
+      <description>&lt;p&gt;sds是redis中定义字符串对象，它比C中的字符串类型对象更为高效、安全。
+&lt;/p&gt;</description>
+    </item>
     
     <item>
       <title>fasthttp源码&amp;最佳实践分析</title>

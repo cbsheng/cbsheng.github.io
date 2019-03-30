@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>Redis源码分析之sds对象 - 无远弗届</title>
+  <meta property="og:title" content="Redis源码分析之sds对象 - 无远弗届" />
+  <meta name="twitter:title" content="Redis源码分析之sds对象 - 无远弗届" />
+  <meta name="description" content="sds是redis中定义字符串对象，它比C中的字符串类型对象更为高效、安全。
+">
+  <meta property="og:description" content="sds是redis中定义字符串对象，它比C中的字符串类型对象更为高效、安全。
+">
+  <meta name="twitter:description" content="sds是redis中定义字符串对象，它比C中的字符串类型对象更为高效、安全。
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/redis%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B9%8Bsds%E5%AF%B9%E8%B1%A1/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">Redis源码分析之sds对象</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>March 30, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/redis/">
+            <i class="fas fa-folder"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/redis/">
+            <i class="fas fa-tag"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  
+</aside>
+      <p>sds是redis中定义字符串对象，它比C中的字符串类型对象更为高效、安全。
+</p>
+
+<ol>
+<li>sds额外保存了字符串长度和内存分配大小等信息。获取长度就只用O(1)。</li>
+<li>sds对象中可能会包含多余空间，这样可以实现内存预分配和惰性删除，减少系统调用带来的开销。</li>
+<li>由于sds记录了长度和剩余可用空间信息，所以strcat类操作也不会导致内存溢出问题。</li>
+<li>能够复用C标准库里针对字符串的方法。</li>
+</ol>
+
+<p>《Redis设计与实现》有比较详细介绍sds的使用场景和好处。但里面介绍的sds结构体在新版(5.0.x)中已经不一样了。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 旧sds结构体
+</span><span class="c1"></span><span class="k">struct</span> <span class="n">sdshdr</span> <span class="p">{</span>
+  <span class="kt">int</span> <span class="n">len</span><span class="p">;</span> <span class="c1">// buf中已用字节长度
+</span><span class="c1"></span>  <span class="kt">int</span> <span class="n">free</span><span class="p">;</span> <span class="c1">// buf中未用字节长度
+</span><span class="c1"></span>  <span class="kt">char</span> <span class="n">buf</span><span class="p">[]</span> <span class="c1">// 存放实际字符串的地方
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>新版代码中提高了sds对内存的利用率，例如两个字节的字符串对应的sds对象，就没必要将len字段定义为int类型了，uint8足够。所以对于不同长度的字符串，实际结构体中len这些字段类型也不同。但sds却对上层使用方保持一致的接口，隐藏底层结构体差异性的细节。</p>
+
+<blockquote>
+<p>基于5.0.3版本源码</p>
+</blockquote>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 来看一下sds的定义
+</span><span class="c1"></span><span class="k">typedef</span> <span class="kt">char</span> <span class="o">*</span><span class="n">sds</span><span class="p">;</span> <span class="c1">// 比较巧妙，sds直接被typedef为char*。那len这些信息存哪？
+</span><span class="c1"></span>
+<span class="c1">// 下面sdshdr5\sdshdr8\sdshdr16等等就是针对不同的字符串长度预先给出的sds定义
+</span><span class="c1">// __attribute__ ((__packed__)) 的作用是告诉GCC编译器，不要对此结构体做内存对齐。
+</span><span class="c1">// 同时看到free字段没了，改成alloc，并增加flags字段
+</span><span class="c1"></span>
+<span class="k">struct</span> <span class="nf">__attribute__</span> <span class="p">((</span><span class="n">__packed__</span><span class="p">))</span> <span class="n">sdshdr5</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span><span class="p">;</span> <span class="cm">/* 3 lsb of type, and 5 msb of string length */</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[];</span>
+<span class="p">};</span>
+<span class="k">struct</span> <span class="nf">__attribute__</span> <span class="p">((</span><span class="n">__packed__</span><span class="p">))</span> <span class="n">sdshdr8</span> <span class="p">{</span>
+    <span class="n">uint8_t</span> <span class="n">len</span><span class="p">;</span> <span class="cm">/* used */</span>
+    <span class="n">uint8_t</span> <span class="n">alloc</span><span class="p">;</span> <span class="cm">/* excluding the header and null terminator */</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span><span class="p">;</span> <span class="cm">/* 3 lsb of type, 5 unused bits */</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[];</span>
+<span class="p">};</span>
+<span class="k">struct</span> <span class="nf">__attribute__</span> <span class="p">((</span><span class="n">__packed__</span><span class="p">))</span> <span class="n">sdshdr16</span> <span class="p">{</span>
+    <span class="n">uint16_t</span> <span class="n">len</span><span class="p">;</span> <span class="cm">/* used */</span>
+    <span class="n">uint16_t</span> <span class="n">alloc</span><span class="p">;</span> <span class="cm">/* excluding the header and null terminator */</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span><span class="p">;</span> <span class="cm">/* 3 lsb of type, 5 unused bits */</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[];</span>
+<span class="p">};</span>
+<span class="k">struct</span> <span class="nf">__attribute__</span> <span class="p">((</span><span class="n">__packed__</span><span class="p">))</span> <span class="n">sdshdr32</span> <span class="p">{</span>
+    <span class="n">uint32_t</span> <span class="n">len</span><span class="p">;</span> <span class="cm">/* used */</span>
+    <span class="n">uint32_t</span> <span class="n">alloc</span><span class="p">;</span> <span class="cm">/* excluding the header and null terminator */</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span><span class="p">;</span> <span class="cm">/* 3 lsb of type, 5 unused bits */</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[];</span>
+<span class="p">};</span>
+<span class="k">struct</span> <span class="nf">__attribute__</span> <span class="p">((</span><span class="n">__packed__</span><span class="p">))</span> <span class="n">sdshdr64</span> <span class="p">{</span>
+    <span class="n">uint64_t</span> <span class="n">len</span><span class="p">;</span> <span class="cm">/* used */</span>
+    <span class="n">uint64_t</span> <span class="n">alloc</span><span class="p">;</span> <span class="cm">/* excluding the header and null terminator */</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span><span class="p">;</span> <span class="cm">/* 3 lsb of type, 5 unused bits */</span>
+    <span class="kt">char</span> <span class="n">buf</span><span class="p">[];</span>
+<span class="p">};</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>但上层代码使用却是sds，是个char*，是怎么提取出len、alloc等字段信息呢？</p>
+
+<p>其实sds是直接指向结构体里的buf数组。当取len等字段信息，只需要减去结构体长度，回退一下指针就行。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 获取实际的结构体通过宏实现
+</span><span class="c1"></span><span class="cp">#define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>创建一个新字符串，怎么判断该选用哪个结构体？</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// string_size就是目标字符串长度，比对一下，看用哪个长度的结构体
+</span><span class="c1"></span><span class="k">static</span> <span class="kr">inline</span> <span class="kt">char</span> <span class="nf">sdsReqType</span><span class="p">(</span><span class="n">size_t</span> <span class="n">string_size</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">string_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="o">&lt;&lt;</span><span class="mi">5</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">SDS_TYPE_5</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">string_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="o">&lt;&lt;</span><span class="mi">8</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">SDS_TYPE_8</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">string_size</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="o">&lt;&lt;</span><span class="mi">16</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">SDS_TYPE_16</span><span class="p">;</span>
+<span class="cp">#if (LONG_MAX == LLONG_MAX)
+</span><span class="cp"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">string_size</span> <span class="o">&lt;</span> <span class="mi">1ll</span><span class="o">&lt;&lt;</span><span class="mi">32</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">SDS_TYPE_32</span><span class="p">;</span>
+    <span class="k">return</span> <span class="n">SDS_TYPE_64</span><span class="p">;</span>
+<span class="cp">#else
+</span><span class="cp"></span>    <span class="k">return</span> <span class="n">SDS_TYPE_32</span><span class="p">;</span>
+<span class="cp">#endif
+</span><span class="cp"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>现在可以看一下，是如何创建一个sds对象的</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span><span class="lnt">60
+</span><span class="lnt">61
+</span><span class="lnt">62
+</span><span class="lnt">63
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="n">sds</span> <span class="nf">sdsnewlen</span><span class="p">(</span><span class="k">const</span> <span class="kt">void</span> <span class="o">*</span><span class="n">init</span><span class="p">,</span> <span class="n">size_t</span> <span class="n">initlen</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">void</span> <span class="o">*</span><span class="n">sh</span><span class="p">;</span>
+    <span class="n">sds</span> <span class="n">s</span><span class="p">;</span>
+    <span class="c1">// 判断该用哪种长度类型的结构体
+</span><span class="c1"></span>    <span class="kt">char</span> <span class="n">type</span> <span class="o">=</span> <span class="n">sdsReqType</span><span class="p">(</span><span class="n">initlen</span><span class="p">);</span>
+
+    <span class="c1">// 虽然有SDS_TYPE_5，但其实不会使用它
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">type</span> <span class="o">==</span> <span class="n">SDS_TYPE_5</span> <span class="o">&amp;&amp;</span> <span class="n">initlen</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="n">type</span> <span class="o">=</span> <span class="n">SDS_TYPE_8</span><span class="p">;</span>
+    <span class="c1">// 获取结构体长度
+</span><span class="c1"></span>    <span class="kt">int</span> <span class="n">hdrlen</span> <span class="o">=</span> <span class="n">sdsHdrSize</span><span class="p">(</span><span class="n">type</span><span class="p">);</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="o">*</span><span class="n">fp</span><span class="p">;</span> <span class="cm">/* flags pointer. */</span>
+
+    <span class="c1">// 分配内存 字符串长度+结构体长度
+</span><span class="c1"></span>    <span class="n">sh</span> <span class="o">=</span> <span class="n">s_malloc</span><span class="p">(</span><span class="n">hdrlen</span><span class="o">+</span><span class="n">initlen</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">init</span><span class="o">==</span><span class="n">SDS_NOINIT</span><span class="p">)</span>
+        <span class="n">init</span> <span class="o">=</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">init</span><span class="p">)</span>
+        <span class="n">memset</span><span class="p">(</span><span class="n">sh</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="n">hdrlen</span><span class="o">+</span><span class="n">initlen</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">sh</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+    <span class="n">s</span> <span class="o">=</span> <span class="p">(</span><span class="kt">char</span><span class="o">*</span><span class="p">)</span><span class="n">sh</span><span class="o">+</span><span class="n">hdrlen</span><span class="p">;</span>
+    <span class="c1">// 这里fp就是flags字段
+</span><span class="c1"></span>    <span class="n">fp</span> <span class="o">=</span> <span class="p">((</span><span class="kt">unsigned</span> <span class="kt">char</span><span class="o">*</span><span class="p">)</span><span class="n">s</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">;</span>
+    <span class="c1">// 接下来对结构体里的len、alloc、flags字段赋值吧
+</span><span class="c1"></span>    <span class="k">switch</span><span class="p">(</span><span class="n">type</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_5</span><span class="p">:</span> <span class="p">{</span>
+            <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="n">type</span> <span class="o">|</span> <span class="p">(</span><span class="n">initlen</span> <span class="o">&lt;&lt;</span> <span class="n">SDS_TYPE_BITS</span><span class="p">);</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_8</span><span class="p">:</span> <span class="p">{</span>
+            <span class="n">SDS_HDR_VAR</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span><span class="n">s</span><span class="p">);</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">alloc</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="n">type</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_16</span><span class="p">:</span> <span class="p">{</span>
+            <span class="n">SDS_HDR_VAR</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span><span class="n">s</span><span class="p">);</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">alloc</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="n">type</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_32</span><span class="p">:</span> <span class="p">{</span>
+            <span class="n">SDS_HDR_VAR</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span><span class="n">s</span><span class="p">);</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">alloc</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="n">type</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_64</span><span class="p">:</span> <span class="p">{</span>
+            <span class="n">SDS_HDR_VAR</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span><span class="n">s</span><span class="p">);</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">len</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="n">sh</span><span class="o">-&gt;</span><span class="n">alloc</span> <span class="o">=</span> <span class="n">initlen</span><span class="p">;</span>
+            <span class="o">*</span><span class="n">fp</span> <span class="o">=</span> <span class="n">type</span><span class="p">;</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">initlen</span> <span class="o">&amp;&amp;</span> <span class="n">init</span><span class="p">)</span>
+    		<span class="c1">// 字符串对象的内容需要初始化
+</span><span class="c1"></span>        <span class="n">memcpy</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="n">init</span><span class="p">,</span> <span class="n">initlen</span><span class="p">);</span>
+    <span class="n">s</span><span class="p">[</span><span class="n">initlen</span><span class="p">]</span> <span class="o">=</span> <span class="sc">&#39;\0&#39;</span><span class="p">;</span>
+    <span class="k">return</span> <span class="n">s</span><span class="p">;</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>内存复用的思想很常见，sds对象也不例外。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 将len字段设置为0，但内存空间不释放。方便下次直接复用
+</span><span class="c1"></span><span class="kt">void</span> <span class="nf">sdsclear</span><span class="p">(</span><span class="n">sds</span> <span class="n">s</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">sdssetlen</span><span class="p">(</span><span class="n">s</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+    <span class="n">s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="sc">&#39;\0&#39;</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="c1">// free方法才是真正释放内容的方法
+</span><span class="c1"></span><span class="kt">void</span> <span class="nf">sdsfree</span><span class="p">(</span><span class="n">sds</span> <span class="n">s</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">s</span> <span class="o">==</span> <span class="nb">NULL</span><span class="p">)</span> <span class="k">return</span><span class="p">;</span>
+    <span class="c1">// s[-1]就刚好指向了flags这个字段了
+</span><span class="c1"></span>    <span class="n">s_free</span><span class="p">((</span><span class="kt">char</span><span class="o">*</span><span class="p">)</span><span class="n">s</span><span class="o">-</span><span class="n">sdsHdrSize</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]));</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/" data-toggle="tooltip" data-placement="top" title="fasthttp源码&amp;最佳实践分析">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
