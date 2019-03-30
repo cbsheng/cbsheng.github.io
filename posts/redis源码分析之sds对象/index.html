@@ -181,12 +181,44 @@
 <p>其实sds是直接指向结构体里的buf数组。当取len等字段信息，只需要减去结构体长度，回退一下指针就行。</p>
 <div class="highlight"><div class="chroma">
 <table class="lntable"><tr><td class="lntd">
-<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
-</span><span class="lnt">2
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
 </span></code></pre></td>
 <td class="lntd">
 <pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 获取实际的结构体通过宏实现
-</span><span class="c1"></span><span class="cp">#define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));</span></code></pre></td></tr></table>
+</span><span class="c1"></span><span class="cp">#define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T)));
+</span><span class="cp"></span>
+<span class="k">static</span> <span class="kr">inline</span> <span class="n">size_t</span> <span class="nf">sdsavail</span><span class="p">(</span><span class="k">const</span> <span class="n">sds</span> <span class="n">s</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">flags</span> <span class="o">=</span> <span class="n">s</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">];</span>
+    <span class="k">switch</span><span class="p">(</span><span class="n">flags</span><span class="o">&amp;</span><span class="n">SDS_TYPE_MASK</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_5</span><span class="p">:</span> <span class="p">{</span>
+            <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">case</span> <span class="nl">SDS_TYPE_8</span><span class="p">:</span> <span class="p">{</span>
+            <span class="c1">// 这里做宏替换
+</span><span class="c1"></span>            <span class="n">SDS_HDR_VAR</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span><span class="n">s</span><span class="p">);</span>
+            <span class="k">return</span> <span class="n">sh</span><span class="o">-&gt;</span><span class="n">alloc</span> <span class="o">-</span> <span class="n">sh</span><span class="o">-&gt;</span><span class="n">len</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="c1">// ...
+</span><span class="c1"></span>    <span class="p">}</span>
+    <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
 <p>创建一个新字符串，怎么判断该选用哪个结构体？</p>
