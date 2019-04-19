@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>Redis事件驱动与连接管理 - 无远弗届</title>
+  <meta property="og:title" content="Redis事件驱动与连接管理 - 无远弗届" />
+  <meta name="twitter:title" content="Redis事件驱动与连接管理 - 无远弗届" />
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta name="twitter:description" content="">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/redis%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8%E4%B8%8E%E8%BF%9E%E6%8E%A5%E7%AE%A1%E7%90%86/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">Redis事件驱动与连接管理</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>March 31, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/redis/">
+            <i class="fas fa-folder"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/redis/">
+            <i class="fas fa-tag"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li><a href="#事件驱动原理和设计">事件驱动原理和设计</a>
+<ul>
+<li>
+<ul>
+<li><a href="#aeeventloop">aeEventLoop</a></li>
+</ul></li>
+</ul></li>
+<li><a href="#连接的生命周期管理">连接的生命周期管理</a></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p></p>
+
+<h2 id="事件驱动原理和设计">事件驱动原理和设计</h2>
+
+<blockquote>
+<p>A simple event-driven programming library. Originally I wrote this code for the Jim&rsquo;s event-loop (Jim is a Tcl interpreter) but later translated it in form of a library for easy reuse.</p>
+
+<p>— redis/src/ae.c
+Redis的事件驱动实现采用了实现与接口分离。针对不同系统平台，使用了不同的IO多路复用函数。共四种，文件分别是：</p>
+</blockquote>
+
+<ol>
+<li>ae_evport.c</li>
+<li>ae_epoll.c</li>
+<li>ae_kqueue.c</li>
+<li>ae_select.c</li>
+</ol>
+
+<p>平台同时支持多种IO函数呢？按照性能Redis定了一个引入顺序，按照性能从高到低include。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="cp">#ifdef HAVE_EVPORT
+</span><span class="cp">#include</span> <span class="cpf">&#34;ae_evport.c&#34;</span><span class="cp">
+</span><span class="cp">#else
+</span><span class="cp"></span>    <span class="cp">#ifdef HAVE_EPOLL
+</span><span class="cp"></span>    <span class="cp">#include</span> <span class="cpf">&#34;ae_epoll.c&#34;</span><span class="cp">
+</span><span class="cp"></span>    <span class="cp">#else
+</span><span class="cp"></span>        <span class="cp">#ifdef HAVE_KQUEUE
+</span><span class="cp"></span>        <span class="cp">#include</span> <span class="cpf">&#34;ae_kqueue.c&#34;</span><span class="cp">
+</span><span class="cp"></span>        <span class="cp">#else
+</span><span class="cp"></span>        <span class="cp">#include</span> <span class="cpf">&#34;ae_select.c&#34;</span><span class="cp">
+</span><span class="cp"></span>        <span class="cp">#endif
+</span><span class="cp"></span>    <span class="cp">#endif
+</span><span class="cp">#endif</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>ae在Redis里是事件驱动器的名字，取自A simple event-driven？</p>
+
+<p>事件驱动有个核心数据类型aeEventLoop。它就像一个管理器，所有ae对上层代码提供的接口，包括对不同IO复用函数封装的方法，都需要操作aeEventLoop。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// ae.h
+</span><span class="c1">// 这些就是ae上层代码提供的所有接口
+</span><span class="c1">// 上层代码只管调用，不用关心底层用了哪种IO多路复用方案
+</span><span class="c1"></span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="nf">aeCreateEventLoop</span><span class="p">(</span><span class="kt">int</span> <span class="n">setsize</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeDeleteEventLoop</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeStop</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">);</span>
+<span class="c1">// 文件事件相关
+</span><span class="c1"></span><span class="kt">int</span> <span class="nf">aeCreateFileEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mask</span><span class="p">,</span>
+        <span class="n">aeFileProc</span> <span class="o">*</span><span class="n">proc</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">clientData</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeDeleteFileEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mask</span><span class="p">);</span>
+<span class="kt">int</span> <span class="nf">aeGetFileEvents</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">);</span>
+<span class="c1">// 时间事件相关
+</span><span class="c1"></span><span class="kt">long</span> <span class="kt">long</span> <span class="nf">aeCreateTimeEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">milliseconds</span><span class="p">,</span> <span class="n">aeTimeProc</span> <span class="o">*</span><span class="n">proc</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">clientData</span><span class="p">,</span> <span class="n">aeEventFinalizerProc</span> <span class="o">*</span><span class="n">finalizerProc</span><span class="p">);</span>
+<span class="kt">int</span> <span class="nf">aeDeleteTimeEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">id</span><span class="p">);</span>
+
+<span class="kt">int</span> <span class="nf">aeProcessEvents</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">flags</span><span class="p">);</span>
+<span class="kt">int</span> <span class="nf">aeWait</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mask</span><span class="p">,</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">milliseconds</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeMain</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">);</span>
+<span class="kt">char</span> <span class="o">*</span><span class="nf">aeGetApiName</span><span class="p">(</span><span class="kt">void</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeSetBeforeSleepProc</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="n">aeBeforeSleepProc</span> <span class="o">*</span><span class="n">beforesleep</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">aeSetAfterSleepProc</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="n">aeBeforeSleepProc</span> <span class="o">*</span><span class="n">aftersleep</span><span class="p">);</span>
+<span class="kt">int</span> <span class="nf">aeGetSetSize</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">);</span>
+<span class="kt">int</span> <span class="n">aeResizeSetSize</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">setsize</span><span class="p">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>事件驱动器在Redis全局只有一个，它被创建后，放在server.el里，server也是全局唯一对象。总得有个地方放置服务器相关的所有信息。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// src/server.h
+</span><span class="c1"></span><span class="k">struct</span> <span class="n">redisServer</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">el</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="c1">// src/server.c
+</span><span class="c1"></span><span class="kt">void</span> <span class="n">initServer</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// 传参是最大允许多少个client建连，默认是不限制
+</span><span class="c1"></span>  <span class="n">server</span><span class="p">.</span><span class="n">el</span> <span class="o">=</span> <span class="n">aeCreateEventLoop</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">maxclients</span><span class="o">+</span><span class="n">CONFIG_FDSET_INCR</span><span class="p">)</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>不同的IO复用方案进行封装，对ae提供一套一致的接口。以ae_epoll.c举例</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 类似构造函数
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">int</span> <span class="nf">aeApiCreate</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 调整大小
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">int</span> <span class="nf">aeApiResize</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">setsize</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 类似析构函数，释放资源
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">void</span> <span class="nf">aeApiFree</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 针对某个文件描述符添加关注的事件
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">int</span> <span class="nf">aeApiAddEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mask</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 删除关心的文件描述符 或 删除文件描述符上某个事件
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">void</span> <span class="nf">aeApiDelEvent</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">delmask</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 带timeout形式，阻塞等待获取可以读/写的文件描述符
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">int</span> <span class="nf">aeApiPoll</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="k">struct</span> <span class="n">timeval</span> <span class="o">*</span><span class="n">tvp</span><span class="p">)</span> <span class="p">{}</span>
+<span class="c1">// 获取IO复用函数名称
+</span><span class="c1"></span><span class="k">static</span> <span class="kt">char</span> <span class="o">*</span><span class="nf">aeApiName</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>就是这样:</p>
+
+<ol>
+<li>(封装好的)IO复用函数 对 ae提供服务;</li>
+<li>而(封装好的)ae 对 server提供服务;</li>
+</ol>
+
+<p>常见的分层设计。</p>
+
+<h4 id="aeeventloop">aeEventLoop</h4>
+
+<p>开始也说到这是个核心类型。可以看到无论封装的IO复用函数还是ae，第一参数都是aeEventLoop类型。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="k">typedef</span> <span class="k">struct</span> <span class="n">aeEventLoop</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="n">maxfd</span><span class="p">;</span>   <span class="c1">// 当前注册的最大文件描述符
+</span><span class="c1"></span>    <span class="kt">int</span> <span class="n">setsize</span><span class="p">;</span> <span class="c1">// 关注的文件描述符上限
+</span><span class="c1"></span>    <span class="kt">long</span> <span class="kt">long</span> <span class="n">timeEventNextId</span><span class="p">;</span> <span class="c1">// 时间事件唯一ID递增器
+</span><span class="c1"></span>    <span class="n">time_t</span> <span class="n">lastTime</span><span class="p">;</span>     <span class="cm">/* Used to detect system clock skew */</span>
+    <span class="n">aeFileEvent</span> <span class="o">*</span><span class="n">events</span><span class="p">;</span> <span class="c1">// 监听读写事件IO事件的文件描述符列表
+</span><span class="c1"></span>    <span class="n">aeFiredEvent</span> <span class="o">*</span><span class="n">fired</span><span class="p">;</span> <span class="c1">// 事件就绪有可读写IO事件的文件描述符列表
+</span><span class="c1"></span>    <span class="n">aeTimeEvent</span> <span class="o">*</span><span class="n">timeEventHead</span><span class="p">;</span> <span class="c1">// 时间事件(定时任务)列表(链表)
+</span><span class="c1"></span>    <span class="kt">int</span> <span class="n">stop</span><span class="p">;</span> <span class="c1">// 是否停止事件循环器
+</span><span class="c1"></span>    <span class="kt">void</span> <span class="o">*</span><span class="n">apidata</span><span class="p">;</span> <span class="c1">// 不同的IO复用函数，poll方法需要参数类型不一样。apidata专门放置这些传参类型
+</span><span class="c1"></span>    <span class="n">aeBeforeSleepProc</span> <span class="o">*</span><span class="n">beforesleep</span><span class="p">;</span> <span class="c1">// 事件循环器 新一轮循环前的钩子函数
+</span><span class="c1"></span>    <span class="n">aeBeforeSleepProc</span> <span class="o">*</span><span class="n">aftersleep</span><span class="p">;</span> <span class="c1">// 事件循环器 一轮循环后的钩子函数
+</span><span class="c1"></span><span class="p">}</span> <span class="n">aeEventLoop</span><span class="p">;</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>它实际也是一个事件循环器。Redis中支持两种事件类型，分别是IO事件和时间事件。时间事件其实就是定时任务。</p>
+
+<p>这个事件循环器一旦通过<code>aeMain()</code>启动后，就只能调用<code>aeStop()</code>才能停下来</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 启动事件循环器
+</span><span class="c1"></span><span class="kt">void</span> <span class="nf">aeMain</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">eventLoop</span><span class="o">-&gt;</span><span class="n">stop</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="c1">// 停止后就退出循环
+</span><span class="c1"></span>    <span class="k">while</span> <span class="p">(</span><span class="o">!</span><span class="n">eventLoop</span><span class="o">-&gt;</span><span class="n">stop</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">eventLoop</span><span class="o">-&gt;</span><span class="n">beforesleep</span> <span class="o">!=</span> <span class="nb">NULL</span><span class="p">)</span>
+            <span class="n">eventLoop</span><span class="o">-&gt;</span><span class="n">beforesleep</span><span class="p">(</span><span class="n">eventLoop</span><span class="p">);</span>
+        <span class="c1">// 处理IO事件与时间事件
+</span><span class="c1"></span>        <span class="n">aeProcessEvents</span><span class="p">(</span><span class="n">eventLoop</span><span class="p">,</span> <span class="n">AE_ALL_EVENTS</span><span class="o">|</span><span class="n">AE_CALL_AFTER_SLEEP</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>循环器就在一个forever的while里，执行<code>aeProcessEvents()</code>。</p>
+
+<p><code>aeProcessEvents()</code>干了几件事：(代码比较长就不贴了)</p>
+
+<ol>
+<li>先检查有没有等待执行的时间事件(定时任务)，离现在最近的一个时间事件还要多久才执行。</li>
+<li>如果有这样的时间事件，记录下还要多久执行它。取为timeout。</li>
+<li>带着这个timeout，通过<code>aeApiPoll()</code>阻塞等待可读写的IO事件。如果第一步找不到时间事件，这里就没有timeout了，一直阻塞直至有可读性的IO事件。</li>
+<li>从<code>aeApiPoll()</code>返回后，如果有IO事件的话。就挨个处理。对该IO事件是读还是写，都有flag标志。并且读写的回调处理函数，也通过<code>aeCreateFileEvent()</code>注册进来了。</li>
+<li>处理完所有IO事件后，就可以执行时间事件了。因为时间事件是定时任务，所有执行完毕后，还需要设置好下一次执行的时间点。</li>
+<li>结束了。可以开始新一轮循环。</li>
+</ol>
+
+<p>那么beforesleep和aftersleep这两个钩子在哪里被调用？beforesleep在<code>aeMain()</code>函数里。aftersleep在第三步，<code>aeApiPoll()</code>一结束就执行。</p>
+
+<p>从执行逻辑可看出，定时任务不是准时执行的。可能会有一些延时。</p>
+
+<h2 id="连接的生命周期管理">连接的生命周期管理</h2>
+
+<p>一般连接生命周期，就是accept -&gt; read/writer -&gt; close。比较简单，redis也差不多。按这个顺序来看看redis的处理方式。</p>
+
+<p>起初，redis服务器肯定监听在某个端口上。有新连接到来时，就会被accept掉。有socket编程经验不会陌生。</p>
+
+<p>简单的socket编程例子一般是listen将socket绑定成功后，就有一个文件描述符。然后在这个文件描述符上阻塞地accept就行。</p>
+
+<p>redis肯定不会阻塞等。而是把这个文件描述符也通过<code>aeCreateFileEvent()</code>放进事件循环器中。这样只要有新连接，就等于有可读事件。这时再去accept，就不用傻瓜地阻塞等待了。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="kt">void</span> <span class="nf">initServer</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>	<span class="k">for</span> <span class="p">(</span><span class="n">j</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="n">server</span><span class="p">.</span><span class="n">ipfd_count</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// 将监听client请求的IO文件描述符加到事件循环器
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">aeCreateFileEvent</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">el</span><span class="p">,</span> <span class="n">server</span><span class="p">.</span><span class="n">ipfd</span><span class="p">[</span><span class="n">j</span><span class="p">],</span> <span class="n">AE_READABLE</span><span class="p">,</span> <span class="n">acceptTcpHandler</span><span class="p">,</span><span class="nb">NULL</span><span class="p">)</span> <span class="o">==</span> <span class="n">AE_ERR</span><span class="p">)</span>
+      <span class="p">{</span>
+        <span class="n">serverPanic</span><span class="p">(</span>
+          <span class="s">&#34;Unrecoverable error creating server.ipfd file event.&#34;</span><span class="p">);</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">void</span> <span class="nf">acceptTcpHandler</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">el</span><span class="p">,</span> <span class="kt">int</span> <span class="n">fd</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">privdata</span><span class="p">,</span> <span class="kt">int</span> <span class="n">mask</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kt">int</span> <span class="n">cport</span><span class="p">,</span> <span class="n">cfd</span><span class="p">,</span> <span class="n">max</span> <span class="o">=</span> <span class="n">MAX_ACCEPTS_PER_CALL</span><span class="p">;</span>
+    <span class="kt">char</span> <span class="n">cip</span><span class="p">[</span><span class="n">NET_IP_STR_LEN</span><span class="p">];</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>
+    <span class="k">while</span><span class="p">(</span><span class="n">max</span><span class="o">--</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// 通过accept系统调用获取新连接的文件描述符
+</span><span class="c1"></span>        <span class="n">cfd</span> <span class="o">=</span> <span class="n">anetTcpAccept</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">neterr</span><span class="p">,</span> <span class="n">fd</span><span class="p">,</span> <span class="n">cip</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">cip</span><span class="p">),</span> <span class="o">&amp;</span><span class="n">cport</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">cfd</span> <span class="o">==</span> <span class="n">ANET_ERR</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">errno</span> <span class="o">!=</span> <span class="n">EWOULDBLOCK</span><span class="p">)</span>
+                <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_WARNING</span><span class="p">,</span>
+                    <span class="s">&#34;Accepting client connection: %s&#34;</span><span class="p">,</span> <span class="n">server</span><span class="p">.</span><span class="n">neterr</span><span class="p">);</span>
+            <span class="k">return</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_VERBOSE</span><span class="p">,</span><span class="s">&#34;Accepted %s:%d&#34;</span><span class="p">,</span> <span class="n">cip</span><span class="p">,</span> <span class="n">cport</span><span class="p">);</span>
+        <span class="n">acceptCommonHandler</span><span class="p">(</span><span class="n">cfd</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="n">cip</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>新连接的文件描述符拿到后，也将它放进事件循环器中。毕竟不能阻塞地傻等数据从client发过来。</p>
+
+<p>为这个新连接创建一个对应的client时，顺便把它加到事件循环器中。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="n">client</span> <span class="o">*</span><span class="nf">createClient</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// 为这个连接创建一个client
+</span><span class="c1"></span>    <span class="n">client</span> <span class="o">*</span><span class="n">c</span> <span class="o">=</span> <span class="n">zmalloc</span><span class="p">(</span><span class="k">sizeof</span><span class="p">(</span><span class="n">client</span><span class="p">));</span>
+
+    <span class="k">if</span> <span class="p">(</span><span class="n">fd</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// 将文件描述符设置为noblocking
+</span><span class="c1"></span>        <span class="n">anetNonBlock</span><span class="p">(</span><span class="nb">NULL</span><span class="p">,</span><span class="n">fd</span><span class="p">);</span>
+        <span class="c1">// 设置TCP_NODELAY，关闭Nagle算法
+</span><span class="c1"></span>        <span class="n">anetEnableTcpNoDelay</span><span class="p">(</span><span class="nb">NULL</span><span class="p">,</span><span class="n">fd</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">tcpkeepalive</span><span class="p">)</span>
+            <span class="c1">// 开启tcp keepalive
+</span><span class="c1"></span>            <span class="n">anetKeepAlive</span><span class="p">(</span><span class="nb">NULL</span><span class="p">,</span><span class="n">fd</span><span class="p">,</span><span class="n">server</span><span class="p">.</span><span class="n">tcpkeepalive</span><span class="p">);</span>
+        <span class="c1">// ok，可以将文件描述符加到事件循环器里了
+</span><span class="c1"></span>        <span class="k">if</span> <span class="p">(</span><span class="n">aeCreateFileEvent</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">el</span><span class="p">,</span><span class="n">fd</span><span class="p">,</span><span class="n">AE_READABLE</span><span class="p">,</span>
+            <span class="n">readQueryFromClient</span><span class="p">,</span> <span class="n">c</span><span class="p">)</span> <span class="o">==</span> <span class="n">AE_ERR</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+            <span class="n">zfree</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
+            <span class="k">return</span> <span class="nb">NULL</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>接下来，就正常等待client发命令到来，触发文件描述符的可读事件，在事件循环器里响应即可。</p>
+
+<p>redis进行响应命令，执行对应的命令处理函数，把处理结果放在client的输出缓冲区里，同时通过<code>aeCreateFileEvent()</code>监听当前client对应文件描述符的写事件。只要可写了，就把输出缓冲区的内容刷给client。</p>
+
+<p>在哪儿询问是否描述符可写呢？就在上面提到的钩子函数beforesleep里。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="kt">void</span> <span class="nf">beforeSleep</span><span class="p">(</span><span class="k">struct</span> <span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>    <span class="c1">// 如果某client的输出缓冲区不为空，则监听client对应的文件描述符的可写状态
+</span><span class="c1"></span>    <span class="c1">// 等于将文件描述符注册到事件循环器中
+</span><span class="c1"></span>    <span class="n">handleClientsWithPendingWrites</span><span class="p">();</span>
+    <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>写完了也不能主动close掉，毕竟每次执行一个命令就开一个连接成本太大了。</p>
+
+<p>常见策略就是定时把空闲的client连接断掉。这个工作主要放在定时任务中。</p>
+
+<p>而client最近活跃的时间就是有命令到达，读取命令时。通过<code>c-&gt;lastinteraction = server.unixtime</code>记录。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 注册定时任务
+</span><span class="c1"></span><span class="kt">void</span> <span class="nf">initServer</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// serverCron就是定时任务
+</span><span class="c1"></span>  <span class="k">if</span> <span class="p">(</span><span class="n">aeCreateTimeEvent</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">el</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">serverCron</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span> <span class="o">==</span> <span class="n">AE_ERR</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">serverPanic</span><span class="p">(</span><span class="s">&#34;Can&#39;t create event loop timers.&#34;</span><span class="p">);</span>
+    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="kt">int</span> <span class="nf">serverCron</span><span class="p">(</span><span class="k">struct</span> <span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">id</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">clientData</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// 断开空闲过久的client
+</span><span class="c1"></span>  <span class="n">clientsCron</span><span class="p">()</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="kt">void</span> <span class="nf">clientsCron</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>    <span class="k">while</span><span class="p">(</span><span class="n">listLength</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">clients</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">iterations</span><span class="o">--</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// ...
+</span><span class="c1"></span>        <span class="c1">// 超出server.idletime，free掉
+</span><span class="c1"></span>        <span class="k">if</span> <span class="p">(</span><span class="n">clientsCronHandleTimeout</span><span class="p">(</span><span class="n">c</span><span class="p">,</span><span class="n">now</span><span class="p">))</span> <span class="k">continue</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="nf">clientsCronHandleTimeout</span><span class="p">(</span><span class="n">client</span> <span class="o">*</span><span class="n">c</span><span class="p">,</span> <span class="n">mstime_t</span> <span class="n">now_ms</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">time_t</span> <span class="n">now</span> <span class="o">=</span> <span class="n">now_ms</span><span class="o">/</span><span class="mi">1000</span><span class="p">;</span>
+
+  <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">maxidletime</span> <span class="o">&amp;&amp;</span>
+      <span class="o">!</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CLIENT_SLAVE</span><span class="p">)</span> <span class="o">&amp;&amp;</span>    <span class="cm">/* no timeout for slaves */</span>
+      <span class="o">!</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CLIENT_MASTER</span><span class="p">)</span> <span class="o">&amp;&amp;</span>   <span class="cm">/* no timeout for masters */</span>
+      <span class="o">!</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CLIENT_BLOCKED</span><span class="p">)</span> <span class="o">&amp;&amp;</span>  <span class="cm">/* no timeout for BLPOP */</span>
+      <span class="o">!</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">flags</span> <span class="o">&amp;</span> <span class="n">CLIENT_PUBSUB</span><span class="p">)</span> <span class="o">&amp;&amp;</span>   <span class="cm">/* no timeout for Pub/Sub clients */</span>
+      <span class="p">(</span><span class="n">now</span> <span class="o">-</span> <span class="n">c</span><span class="o">-&gt;</span><span class="n">lastinteraction</span> <span class="o">&gt;</span> <span class="n">server</span><span class="p">.</span><span class="n">maxidletime</span><span class="p">))</span>
+  <span class="p">{</span>
+    <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_VERBOSE</span><span class="p">,</span><span class="s">&#34;Closing idle client&#34;</span><span class="p">);</span>
+    <span class="c1">// freeclient里调用close
+</span><span class="c1"></span>    <span class="n">freeClient</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
+    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+  <span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/redis%E9%87%8C%E4%B8%80%E4%B8%AA%E7%AE%80%E5%8D%95%E8%AF%B7%E6%B1%82%E5%A6%82%E4%BD%95%E8%A2%AB%E5%A4%84%E7%90%86/" data-toggle="tooltip" data-placement="top" title="Redis里一个简单请求如何被处理">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
