@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>Redis(5.0.3)定时任务serverCron - 无远弗届</title>
+  <meta property="og:title" content="Redis(5.0.3)定时任务serverCron - 无远弗届" />
+  <meta name="twitter:title" content="Redis(5.0.3)定时任务serverCron - 无远弗届" />
+  <meta name="description" content="redis里很多非响应命令的功能，例如持久化、内存淘汰、复制、cluster等等，是需要设置一个定时任务来完成的。并且这里部分的定时任务的执与响应命令的执行是混在一个线程中。意味着定时任务执行过慢会影响redis的性能。
+
+">
+  <meta property="og:description" content="redis里很多非响应命令的功能，例如持久化、内存淘汰、复制、cluster等等，是需要设置一个定时任务来完成的。并且这里部分的定时任务的执与响应命令的执行是混在一个线程中。意味着定时任务执行过慢会影响redis的性能。
+
+">
+  <meta name="twitter:description" content="redis里很多非响应命令的功能，例如持久化、内存淘汰、复制、cluster等等，是需要设置一个定时任务来完成的。并且这里部分的定时任务的执与响应命令的执行是混在一个线程中。意味着定时任务执行过慢会影响redis的性能。
+
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/redis%E5%AE%9A%E6%97%B6%E4%BB%BB%E5%8A%A1servercron/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">Redis(5.0.3)定时任务serverCron</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>March 31, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/redis/">
+            <i class="fas fa-folder"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-folder"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/redis/">
+            <i class="fas fa-tag"></i>
+            Redis
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#定时任务-时间事件">定时任务(时间事件)</a></li>
+<li><a href="#大任务包含小任务">大任务包含小任务</a></li>
+<li><a href="#小任务列举">小任务列举</a></li>
+<li><a href="#大任务下次被调度时间">大任务下次被调度时间</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p>redis里很多非响应命令的功能，例如持久化、内存淘汰、复制、cluster等等，是需要设置一个定时任务来完成的。并且这里部分的定时任务的执与响应命令的执行是混在一个线程中。意味着定时任务执行过慢会影响redis的性能。</p>
+
+<p></p>
+
+<p>本文主要介绍下redis是如何实现并包含大概哪些定时任务。</p>
+
+<h3 id="定时任务-时间事件">定时任务(时间事件)</h3>
+
+<p>redis定时任务被当成时间事件，与IO事件一同放到事件循环器中被处理。</p>
+
+<blockquote>
+<p>关于事件循环器可以参考<a href="http://cbsheng.github.io/posts/redis%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8%E4%B8%8E%E8%BF%9E%E6%8E%A5%E7%AE%A1%E7%90%86/">Redis事件驱动与连接管理</a>。</p>
+</blockquote>
+
+<p>定时任务是在IO事件处理完之后才被执行的，所以redis的定时任务并不一定准点执行的。</p>
+
+<p>在等待IO事件之前，会先获取下次定时任务应该被执行的时间点，减去当前时间，得出来的值就是阻塞等待IO事件的timeout。总不能无限等待下去。要是timeout前IO事件已经到来了也没关系，最后真正在执行定时任务前会做检查，没到时间点是不会被执行的。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="k">static</span> <span class="kt">int</span> <span class="nf">processTimeEvents</span><span class="p">(</span><span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// 获取当前时间
+</span><span class="c1"></span>  <span class="n">aeGetTime</span><span class="p">(</span><span class="o">&amp;</span><span class="n">now_sec</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">now_ms</span><span class="p">);</span>
+  <span class="c1">// 到达时间事件设置的执行时间
+</span><span class="c1"></span>  <span class="k">if</span> <span class="p">(</span><span class="n">now_sec</span> <span class="o">&gt;</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">when_sec</span> <span class="o">||</span>
+      <span class="p">(</span><span class="n">now_sec</span> <span class="o">==</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">when_sec</span> <span class="o">&amp;&amp;</span> <span class="n">now_ms</span> <span class="o">&gt;=</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">when_ms</span><span class="p">))</span>
+  <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>    <span class="c1">// te-timeProc 就是定时任务
+</span><span class="c1"></span>    <span class="n">retval</span> <span class="o">=</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">timeProc</span><span class="p">(</span><span class="n">eventLoop</span><span class="p">,</span> <span class="n">id</span><span class="p">,</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">clientData</span><span class="p">);</span>
+    <span class="n">processed</span><span class="o">++</span><span class="p">;</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">retval</span> <span class="o">!=</span> <span class="n">AE_NOMORE</span><span class="p">)</span> <span class="p">{</span>
+      <span class="n">aeAddMillisecondsToNow</span><span class="p">(</span><span class="n">retval</span><span class="p">,</span><span class="o">&amp;</span><span class="n">te</span><span class="o">-&gt;</span><span class="n">when_sec</span><span class="p">,</span><span class="o">&amp;</span><span class="n">te</span><span class="o">-&gt;</span><span class="n">when_ms</span><span class="p">);</span>
+    <span class="p">}</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>  <span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="大任务包含小任务">大任务包含小任务</h3>
+
+<p>开篇也说到，有多种redis功能是需要定时任务来协助的。它们就是小任务，全被写在一个大任务里(serverCron)。</p>
+
+<p>而大任务就是时间事件。也即全局其实只有一个定时任务，每次执行它的时候，里面再执行各种小任务。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span><span class="lnt">8
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="kt">void</span> <span class="nf">initServer</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>	<span class="k">if</span> <span class="p">(</span><span class="n">aeCreateTimeEvent</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">el</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">serverCron</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">)</span> <span class="o">==</span> <span class="n">AE_ERR</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">serverPanic</span><span class="p">(</span><span class="s">&#34;Can&#39;t create event loop timers.&#34;</span><span class="p">);</span>
+    <span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+  <span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>大任务的执行频率由参数<a href="http://download.redis.io/redis-stable/redis.conf">hz</a>控制。默认值是10，表示每秒执行10次定时任务。反映在redis内部，就是每隔100ms执行一次大任务。</p>
+
+<blockquote>
+<p>hz是一个重要的参数，它的不同取值对redis集群性能有所影响。暂不在本文展开。</p>
+</blockquote>
+
+<p>但不是每个小任务都各100ms执行一次。例如同样是记录信息，命令执行个数，流入流出的流量可以每100ms记录一次。而db的过期key与非过期key的数量，就只需要5000ms记录一次即可。</p>
+
+<p>但大任务是每(1000/hz)ms被调度执行一次的。里面的小任务如何控制调度的间隔时间呢？</p>
+
+<blockquote>
+<p>每次大任务(serverCron)被执行完后，server.cronloops会自增一。表示大任务被调度的次数</p>
+</blockquote>
+
+<p>就是<code>#define run_with_period(_ms_) if ((_ms_ &lt;= 1000/server.hz) || !(server.cronloops%((_ms_)/(1000/server.hz)))</code>这个宏了。</p>
+
+<p>它分两部分，任一满足即可执行。用一个例子看看</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// 每100ms执行一次
+</span><span class="c1"></span><span class="n">run_with_period</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="p">{</span> <span class="n">function1</span><span class="p">()}</span>
+<span class="c1">// 每5000ms执行一次
+</span><span class="c1"></span><span class="n">run_with_period</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="p">{</span> <span class="n">function2</span><span class="p">()}</span></code></pre></td></tr></table>
+</div>
+</div>
+<ul>
+<li>当hz=10，ms=100时，100 &lt;= 1000/server.hz。function1被执行</li>
+<li>当hz=10，ms=5000时，server.cronloops的值会累积到50的倍数时，即大任务在每100ms被调度的情况下，总共被调度了50次。总时间等于5000ms。这时就命中<code>!(server.cronloops%((_ms_)/(1000/server.hz))</code>。function2被执行。</li>
+</ul>
+
+<p>就是这样，在大任务<code>serverCron()</code>里，个别小任务还可以通过<code>run_with_period</code>宏来控制调度的周期，其他小任务就统一按照大任务的调度频率在执行。</p>
+
+<h3 id="小任务列举">小任务列举</h3>
+
+<p>小任务很多，只做部分注释列举。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">  1
+</span><span class="lnt">  2
+</span><span class="lnt">  3
+</span><span class="lnt">  4
+</span><span class="lnt">  5
+</span><span class="lnt">  6
+</span><span class="lnt">  7
+</span><span class="lnt">  8
+</span><span class="lnt">  9
+</span><span class="lnt"> 10
+</span><span class="lnt"> 11
+</span><span class="lnt"> 12
+</span><span class="lnt"> 13
+</span><span class="lnt"> 14
+</span><span class="lnt"> 15
+</span><span class="lnt"> 16
+</span><span class="lnt"> 17
+</span><span class="lnt"> 18
+</span><span class="lnt"> 19
+</span><span class="lnt"> 20
+</span><span class="lnt"> 21
+</span><span class="lnt"> 22
+</span><span class="lnt"> 23
+</span><span class="lnt"> 24
+</span><span class="lnt"> 25
+</span><span class="lnt"> 26
+</span><span class="lnt"> 27
+</span><span class="lnt"> 28
+</span><span class="lnt"> 29
+</span><span class="lnt"> 30
+</span><span class="lnt"> 31
+</span><span class="lnt"> 32
+</span><span class="lnt"> 33
+</span><span class="lnt"> 34
+</span><span class="lnt"> 35
+</span><span class="lnt"> 36
+</span><span class="lnt"> 37
+</span><span class="lnt"> 38
+</span><span class="lnt"> 39
+</span><span class="lnt"> 40
+</span><span class="lnt"> 41
+</span><span class="lnt"> 42
+</span><span class="lnt"> 43
+</span><span class="lnt"> 44
+</span><span class="lnt"> 45
+</span><span class="lnt"> 46
+</span><span class="lnt"> 47
+</span><span class="lnt"> 48
+</span><span class="lnt"> 49
+</span><span class="lnt"> 50
+</span><span class="lnt"> 51
+</span><span class="lnt"> 52
+</span><span class="lnt"> 53
+</span><span class="lnt"> 54
+</span><span class="lnt"> 55
+</span><span class="lnt"> 56
+</span><span class="lnt"> 57
+</span><span class="lnt"> 58
+</span><span class="lnt"> 59
+</span><span class="lnt"> 60
+</span><span class="lnt"> 61
+</span><span class="lnt"> 62
+</span><span class="lnt"> 63
+</span><span class="lnt"> 64
+</span><span class="lnt"> 65
+</span><span class="lnt"> 66
+</span><span class="lnt"> 67
+</span><span class="lnt"> 68
+</span><span class="lnt"> 69
+</span><span class="lnt"> 70
+</span><span class="lnt"> 71
+</span><span class="lnt"> 72
+</span><span class="lnt"> 73
+</span><span class="lnt"> 74
+</span><span class="lnt"> 75
+</span><span class="lnt"> 76
+</span><span class="lnt"> 77
+</span><span class="lnt"> 78
+</span><span class="lnt"> 79
+</span><span class="lnt"> 80
+</span><span class="lnt"> 81
+</span><span class="lnt"> 82
+</span><span class="lnt"> 83
+</span><span class="lnt"> 84
+</span><span class="lnt"> 85
+</span><span class="lnt"> 86
+</span><span class="lnt"> 87
+</span><span class="lnt"> 88
+</span><span class="lnt"> 89
+</span><span class="lnt"> 90
+</span><span class="lnt"> 91
+</span><span class="lnt"> 92
+</span><span class="lnt"> 93
+</span><span class="lnt"> 94
+</span><span class="lnt"> 95
+</span><span class="lnt"> 96
+</span><span class="lnt"> 97
+</span><span class="lnt"> 98
+</span><span class="lnt"> 99
+</span><span class="lnt">100
+</span><span class="lnt">101
+</span><span class="lnt">102
+</span><span class="lnt">103
+</span><span class="lnt">104
+</span><span class="lnt">105
+</span><span class="lnt">106
+</span><span class="lnt">107
+</span><span class="lnt">108
+</span><span class="lnt">109
+</span><span class="lnt">110
+</span><span class="lnt">111
+</span><span class="lnt">112
+</span><span class="lnt">113
+</span><span class="lnt">114
+</span><span class="lnt">115
+</span><span class="lnt">116
+</span><span class="lnt">117
+</span><span class="lnt">118
+</span><span class="lnt">119
+</span><span class="lnt">120
+</span><span class="lnt">121
+</span><span class="lnt">122
+</span><span class="lnt">123
+</span><span class="lnt">124
+</span><span class="lnt">125
+</span><span class="lnt">126
+</span><span class="lnt">127
+</span><span class="lnt">128
+</span><span class="lnt">129
+</span><span class="lnt">130
+</span><span class="lnt">131
+</span><span class="lnt">132
+</span><span class="lnt">133
+</span><span class="lnt">134
+</span><span class="lnt">135
+</span><span class="lnt">136
+</span><span class="lnt">137
+</span><span class="lnt">138
+</span><span class="lnt">139
+</span><span class="lnt">140
+</span><span class="lnt">141
+</span><span class="lnt">142
+</span><span class="lnt">143
+</span><span class="lnt">144
+</span><span class="lnt">145
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="kt">int</span> <span class="nf">serverCron</span><span class="p">(</span><span class="k">struct</span> <span class="n">aeEventLoop</span> <span class="o">*</span><span class="n">eventLoop</span><span class="p">,</span> <span class="kt">long</span> <span class="kt">long</span> <span class="n">id</span><span class="p">,</span> <span class="kt">void</span> <span class="o">*</span><span class="n">clientData</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>
+    <span class="c1">// 看门狗,用于调试,当执行命令耗时过长会发送SIGALRM信号,这时redis会响应信息并记录当前堆栈
+</span><span class="c1"></span>    <span class="c1">// src/debug.c/enableWatchdog 里注册信号处理函数
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">watchdog_period</span><span class="p">)</span> <span class="n">watchdogScheduleSignal</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">watchdog_period</span><span class="p">);</span>
+
+    <span class="c1">// 将当前时间戳缓存起来，这个时间会在多个地方被使用
+</span><span class="c1"></span>    <span class="c1">// 使用缓存起来的时间戳比每次调用time系统调用更快
+</span><span class="c1"></span>    <span class="n">updateCachedTime</span><span class="p">();</span>
+
+    <span class="n">server</span><span class="p">.</span><span class="n">hz</span> <span class="o">=</span> <span class="n">server</span><span class="p">.</span><span class="n">config_hz</span><span class="p">;</span>
+    <span class="c1">// 5.0版本引入了动态hz，默认开启
+</span><span class="c1"></span>    <span class="c1">// 如果client很多，那定时任务执行的频率会加快
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">dynamic_hz</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">listLength</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">clients</span><span class="p">)</span> <span class="o">/</span> <span class="n">server</span><span class="p">.</span><span class="n">hz</span> <span class="o">&gt;</span>
+               <span class="n">MAX_CLIENTS_PER_CLOCK_TICK</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">server</span><span class="p">.</span><span class="n">hz</span> <span class="o">*=</span> <span class="mi">2</span><span class="p">;</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">hz</span> <span class="o">&gt;</span> <span class="n">CONFIG_MAX_HZ</span><span class="p">)</span> <span class="p">{</span>
+                <span class="n">server</span><span class="p">.</span><span class="n">hz</span> <span class="o">=</span> <span class="n">CONFIG_MAX_HZ</span><span class="p">;</span>
+                <span class="k">break</span><span class="p">;</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 每100ms执行一次
+</span><span class="c1"></span>    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// 记录执行的命令个数
+</span><span class="c1"></span>        <span class="n">trackInstantaneousMetric</span><span class="p">(</span><span class="n">STATS_METRIC_COMMAND</span><span class="p">,</span><span class="n">server</span><span class="p">.</span><span class="n">stat_numcommands</span><span class="p">);</span>
+        <span class="c1">// 记录读流量
+</span><span class="c1"></span>        <span class="n">trackInstantaneousMetric</span><span class="p">(</span><span class="n">STATS_METRIC_NET_INPUT</span><span class="p">,</span><span class="n">server</span><span class="p">.</span><span class="n">stat_net_input_bytes</span><span class="p">);</span>
+        <span class="c1">// 记录写流量
+</span><span class="c1"></span>        <span class="n">trackInstantaneousMetric</span><span class="p">(</span><span class="n">STATS_METRIC_NET_OUTPUT</span><span class="p">,</span><span class="n">server</span><span class="p">.</span><span class="n">stat_net_output_bytes</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="c1">// LRU相关
+</span><span class="c1"></span>    <span class="kt">unsigned</span> <span class="kt">long</span> <span class="n">lruclock</span> <span class="o">=</span> <span class="n">getLRUClock</span><span class="p">();</span>
+    <span class="n">atomicSet</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">lruclock</span><span class="p">,</span><span class="n">lruclock</span><span class="p">);</span>
+
+    <span class="c1">// 记录内存使用峰值
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">zmalloc_used_memory</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">server</span><span class="p">.</span><span class="n">stat_peak_memory</span><span class="p">)</span>
+        <span class="n">server</span><span class="p">.</span><span class="n">stat_peak_memory</span> <span class="o">=</span> <span class="n">zmalloc_used_memory</span><span class="p">();</span>
+
+    <span class="c1">// 记录内存的使用信息，例如zmalloc的RSS信息，lua的内存信息
+</span><span class="c1"></span>    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">process_rss</span> <span class="o">=</span> <span class="n">zmalloc_get_rss</span><span class="p">();</span>
+        <span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">zmalloc_used</span> <span class="o">=</span> <span class="n">zmalloc_used_memory</span><span class="p">();</span>
+        <span class="n">zmalloc_get_allocator_info</span><span class="p">(</span><span class="o">&amp;</span><span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">allocator_allocated</span><span class="p">,</span>
+                                   <span class="o">&amp;</span><span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">allocator_active</span><span class="p">,</span>
+                                   <span class="o">&amp;</span><span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">allocator_resident</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">allocator_resident</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">size_t</span> <span class="n">lua_memory</span> <span class="o">=</span> <span class="n">lua_gc</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">lua</span><span class="p">,</span><span class="n">LUA_GCCOUNT</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span><span class="o">*</span><span class="mi">1024LL</span><span class="p">;</span>
+            <span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">allocator_resident</span> <span class="o">=</span> <span class="n">server</span><span class="p">.</span><span class="n">cron_malloc_stats</span><span class="p">.</span><span class="n">process_rss</span> <span class="o">-</span> <span class="n">lua_memory</span><span class="p">;</span>
+        <span class="p">}</span>
+      	<span class="c1">// ...
+</span><span class="c1"></span>    <span class="p">}</span>
+
+    <span class="c1">// initserver()中注册了信号处理函数，接受到SIGTERM信号后，会设置server.shutdown_asap为1
+</span><span class="c1"></span>    <span class="c1">// 而对SIGTERM信号的shutdown响应处理推迟到这里执行
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">shutdown_asap</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">prepareForShutdown</span><span class="p">(</span><span class="n">SHUTDOWN_NOFLAGS</span><span class="p">)</span> <span class="o">==</span> <span class="n">C_OK</span><span class="p">)</span> <span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+        <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_WARNING</span><span class="p">,</span><span class="s">&#34;SIGTERM received but errors trying to shut down the server, check the logs for more information&#34;</span><span class="p">);</span>
+        <span class="n">server</span><span class="p">.</span><span class="n">shutdown_asap</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 记录每个db里的基本信息，设置了过期时间key的数量，没有过期时间key的数量和db(即dict)的总大小，
+</span><span class="c1"></span>    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">j</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="n">server</span><span class="p">.</span><span class="n">dbnum</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kt">long</span> <span class="kt">long</span> <span class="n">size</span><span class="p">,</span> <span class="n">used</span><span class="p">,</span> <span class="n">vkeys</span><span class="p">;</span>
+
+            <span class="n">size</span> <span class="o">=</span> <span class="n">dictSlots</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">db</span><span class="p">[</span><span class="n">j</span><span class="p">].</span><span class="n">dict</span><span class="p">);</span>
+            <span class="n">used</span> <span class="o">=</span> <span class="n">dictSize</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">db</span><span class="p">[</span><span class="n">j</span><span class="p">].</span><span class="n">dict</span><span class="p">);</span>
+            <span class="n">vkeys</span> <span class="o">=</span> <span class="n">dictSize</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">db</span><span class="p">[</span><span class="n">j</span><span class="p">].</span><span class="n">expires</span><span class="p">);</span>
+            <span class="k">if</span> <span class="p">(</span><span class="n">used</span> <span class="o">||</span> <span class="n">vkeys</span><span class="p">)</span> <span class="p">{</span>
+                <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_VERBOSE</span><span class="p">,</span><span class="s">&#34;DB %d: %lld keys (%lld volatile) in %lld slots HT.&#34;</span><span class="p">,</span><span class="n">j</span><span class="p">,</span><span class="n">used</span><span class="p">,</span><span class="n">vkeys</span><span class="p">,</span><span class="n">size</span><span class="p">);</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 记录client和slave个数及内存使用量
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="n">server</span><span class="p">.</span><span class="n">sentinel_mode</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">run_with_period</span><span class="p">(</span><span class="mi">5000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">serverLog</span><span class="p">(</span><span class="n">LL_VERBOSE</span><span class="p">,</span>
+                <span class="s">&#34;%lu clients connected (%lu replicas), %zu bytes in use&#34;</span><span class="p">,</span>
+                <span class="n">listLength</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">clients</span><span class="p">)</span><span class="o">-</span><span class="n">listLength</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">slaves</span><span class="p">),</span>
+                <span class="n">listLength</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">slaves</span><span class="p">),</span>
+                <span class="n">zmalloc_used_memory</span><span class="p">());</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 专门针对client的定时任务
+</span><span class="c1"></span>    <span class="c1">// 1. 清理超过空闲上限的client
+</span><span class="c1"></span>    <span class="c1">// 2. 检查出输入缓冲区过大的client，收缩缓冲区，释放内存
+</span><span class="c1"></span>    <span class="c1">// 3. 记录输入/出缓冲区的内存使用峰值
+</span><span class="c1"></span>    <span class="n">clientsCron</span><span class="p">();</span>
+
+    <span class="c1">// 专门针对db的定时任务
+</span><span class="c1"></span>    <span class="c1">// 1. 清理过期的key
+</span><span class="c1"></span>    <span class="c1">// 2. 对db进行resize
+</span><span class="c1"></span>    <span class="c1">// 3. 对db进行rehash
+</span><span class="c1"></span>    <span class="n">databasesCron</span><span class="p">();</span>
+
+    <span class="c1">// ...
+</span><span class="c1"></span>    <span class="c1">// AOF相关
+</span><span class="c1"></span>    <span class="c1">// ...
+</span><span class="c1"></span>
+    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">aof_last_write_status</span> <span class="o">==</span> <span class="n">C_ERR</span><span class="p">)</span>
+            <span class="n">flushAppendOnlyFile</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="n">freeClientsInAsyncFreeQueue</span><span class="p">();</span>
+
+    <span class="c1">// 复制相关
+</span><span class="c1"></span>    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span> <span class="n">replicationCron</span><span class="p">();</span>
+
+    <span class="c1">// 集群相关
+</span><span class="c1"></span>    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">cluster_enabled</span><span class="p">)</span> <span class="n">clusterCron</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 哨兵模式相关
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">sentinel_mode</span><span class="p">)</span> <span class="n">sentinelTimer</span><span class="p">();</span>
+
+    <span class="n">run_with_period</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">migrateCloseTimedoutSockets</span><span class="p">();</span>
+    <span class="p">}</span>
+
+    <span class="c1">// RDB相关
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">rdb_child_pid</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">&amp;&amp;</span> <span class="n">server</span><span class="p">.</span><span class="n">aof_child_pid</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="o">&amp;&amp;</span>
+        <span class="n">server</span><span class="p">.</span><span class="n">rdb_bgsave_scheduled</span> <span class="o">&amp;&amp;</span>
+        <span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">unixtime</span><span class="o">-</span><span class="n">server</span><span class="p">.</span><span class="n">lastbgsave_try</span> <span class="o">&gt;</span> <span class="n">CONFIG_BGSAVE_RETRY_DELAY</span> <span class="o">||</span>
+         <span class="n">server</span><span class="p">.</span><span class="n">lastbgsave_status</span> <span class="o">==</span> <span class="n">C_OK</span><span class="p">))</span>
+    <span class="p">{</span>
+        <span class="n">rdbSaveInfo</span> <span class="n">rsi</span><span class="p">,</span> <span class="o">*</span><span class="n">rsiptr</span><span class="p">;</span>
+        <span class="n">rsiptr</span> <span class="o">=</span> <span class="n">rdbPopulateSaveInfo</span><span class="p">(</span><span class="o">&amp;</span><span class="n">rsi</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">rdbSaveBackground</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">rdb_filename</span><span class="p">,</span><span class="n">rsiptr</span><span class="p">)</span> <span class="o">==</span> <span class="n">C_OK</span><span class="p">)</span>
+            <span class="n">server</span><span class="p">.</span><span class="n">rdb_bgsave_scheduled</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="c1">// 大任务被调度次数自增一
+</span><span class="c1"></span>    <span class="n">server</span><span class="p">.</span><span class="n">cronloops</span><span class="o">++</span><span class="p">;</span>
+    <span class="k">return</span> <span class="mi">1000</span><span class="o">/</span><span class="n">server</span><span class="p">.</span><span class="n">hz</span><span class="p">;</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h3 id="大任务下次被调度时间">大任务下次被调度时间</h3>
+
+<p>每次大任务被执行完，需要对它设置好下一次应该调度的时间点。</p>
+
+<p><code>serverCron()</code>最后会<code>return 1000/server.hz;</code>。server.hz=10时，就是返回100ms。</p>
+
+<p>回到本文的第一段代码，注意在<code>processTimeEvents()</code>里两行代码:</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-c" data-lang="c"><span class="n">retval</span> <span class="o">=</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">timeProc</span><span class="p">(</span><span class="n">eventLoop</span><span class="p">,</span> <span class="n">id</span><span class="p">,</span> <span class="n">te</span><span class="o">-&gt;</span><span class="n">clientData</span><span class="p">);</span>
+<span class="k">if</span> <span class="p">(</span><span class="n">retval</span> <span class="o">!=</span> <span class="n">AE_NOMORE</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">aeAddMillisecondsToNow</span><span class="p">(</span><span class="n">retval</span><span class="p">,</span><span class="o">&amp;</span><span class="n">te</span><span class="o">-&gt;</span><span class="n">when_sec</span><span class="p">,</span><span class="o">&amp;</span><span class="n">te</span><span class="o">-&gt;</span><span class="n">when_ms</span><span class="p">);</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>时间事件处理完之后，retval=1000/server.hz。再用<code>aeAddMillisecondsToNow()</code>设置好下次调度的时间点。等待事件循环器下次调度即可。</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer">
+          <a href="/posts/redis%E4%BA%8B%E4%BB%B6%E9%A9%B1%E5%8A%A8%E4%B8%8E%E8%BF%9E%E6%8E%A5%E7%AE%A1%E7%90%86/" data-toggle="tooltip" data-placement="top" title="Redis(5.0.3)事件驱动与连接管理">&lt; Newer</a>
+      </li>
+      <li class="pager-older">
+        <a href="/posts/redis%E9%87%8C%E4%B8%80%E4%B8%AA%E7%AE%80%E5%8D%95%E8%AF%B7%E6%B1%82%E5%A6%82%E4%BD%95%E8%A2%AB%E5%A4%84%E7%90%86/" data-toggle="tooltip" data-placement="top" title="Redis(5.0.3)里一个简单请求如何被处理">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
