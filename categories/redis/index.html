@@ -68,14 +68,7 @@
           </li>
         </ul>
         <div class="article-content">
-          简介 redis的LRU与LFU都是概率算法。并不是绝对准确的LRU或LFU算法。
-Redis在内存满载时触发内存淘汰，最开始是有概率淘汰掉一些不应该淘汰的key。但它会越来越准。这一切都是因为Redis采用了一个全局池子来存放待淘汰key，池子是带序的，按key的空闲时间从小到大。
-每次入池子的key，都是从keyspace(db-&gt;dict或db-&gt;expires)中随机挑选的(随机挑选的个数由maxmemory-samples参数控制，默认5个)。在入池的时候，如果池子里已经有key，就采用插入的思想，把新key插在合适的位置保持池子有序。
-例如池子末端有空间：e要放进[a,b,c,d,NULL]中c的位置，先挪成[a,b,c,c,d]，然后把e覆盖进去，变成[a,b,e,c,d]。
-池子末端没有空间：e要放进[a,b,c,d]中c的位置，先挪成[b,c,c,d]，然后把e覆盖进去，变成[b,c,e,d]
-key的空闲时间又是如何记录的？
-LRU或LFU策略都共用了redisObject里的lru字段，它总长24位，前16位用于LRU，而LFU则用到24位。
-1 2 3 4 5 6 7 8 9 10 11  #define LRU_BITS 24 typedef struct redisObject { // var:4 的写法用了位域  unsigned type:4; unsigned encoding:4; unsigned lru:LRU_BITS; /* LRU time (relative to global lru_clock) or * LFU data (least significant 8 bits frequency * and most significant 16 bits access time). */ int refcount; void *ptr; } robj;   而LFU也分成前16位和后8位来用，前16位和LRU保持一致，用来放置访问时间。后8位用来存放访问次数。
+          <p></p>
         </div>
         <div class="article-readmore"><a href="/posts/redis%E5%86%85%E5%AD%98%E6%B7%98%E6%B1%B0lru%E5%92%8Clfu/">Read more...</a></div>
         <div class="article-floatclear"></div>
