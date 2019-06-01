@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Mysql on 无远弗届</title>
+    <link>http://cbsheng.github.io/tags/mysql/</link>
+    <description>Recent content in Mysql on 无远弗届</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
+    <lastBuildDate>Sat, 01 Jun 2019 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="http://cbsheng.github.io/tags/mysql/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>简单结合Mysql索引、隔离性和锁的理解</title>
+      <link>http://cbsheng.github.io/posts/%E7%AE%80%E5%8D%95%E7%BB%93%E5%90%88mysql%E7%B4%A2%E5%BC%95%E9%9A%94%E7%A6%BB%E6%80%A7%E5%92%8C%E9%94%81%E7%90%86%E8%A7%A3/</link>
+      <pubDate>Sat, 01 Jun 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E7%AE%80%E5%8D%95%E7%BB%93%E5%90%88mysql%E7%B4%A2%E5%BC%95%E9%9A%94%E7%A6%BB%E6%80%A7%E5%92%8C%E9%94%81%E7%90%86%E8%A7%A3/</guid>
+      <description>&lt;p&gt;大概以实现重复读级别的隔离性，将索引和锁串起来理解一下。&lt;/p&gt;
+
+&lt;p&gt;&lt;/p&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

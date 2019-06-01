@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>简单结合Mysql索引、隔离性和锁的理解 - 无远弗届</title>
+  <meta property="og:title" content="简单结合Mysql索引、隔离性和锁的理解 - 无远弗届" />
+  <meta name="twitter:title" content="简单结合Mysql索引、隔离性和锁的理解 - 无远弗届" />
+  <meta name="description" content="大概以实现重复读级别的隔离性，将索引和锁串起来理解一下。
+
+">
+  <meta property="og:description" content="大概以实现重复读级别的隔离性，将索引和锁串起来理解一下。
+
+">
+  <meta name="twitter:description" content="大概以实现重复读级别的隔离性，将索引和锁串起来理解一下。
+
+">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E7%AE%80%E5%8D%95%E7%BB%93%E5%90%88mysql%E7%B4%A2%E5%BC%95%E9%9A%94%E7%A6%BB%E6%80%A7%E5%92%8C%E9%94%81%E7%90%86%E8%A7%A3/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">简单结合Mysql索引、隔离性和锁的理解</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>June 1, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/mysql/">
+            <i class="fas fa-folder"></i>
+            Mysql
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/mysql/">
+            <i class="fas fa-tag"></i>
+            Mysql
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#常见索引">常见索引</a></li>
+<li><a href="#四种事务隔离性">四种事务隔离性</a></li>
+<li><a href="#锁">锁</a></li>
+<li><a href="#开始串">开始串</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p>大概以实现重复读级别的隔离性，将索引和锁串起来理解一下。</p>
+
+<p></p>
+
+<p>先简单介绍索引、隔离性和锁这三者。</p>
+
+<h3 id="常见索引">常见索引</h3>
+
+<p>聚簇索引、唯一索引、二级索引（普通索引）、联合索引、字符串前缀索引。</p>
+
+<blockquote>
+<p>首先索引mysql的innodb引擎里，索引都是B+树结构。</p>
+</blockquote>
+
+<p>对于这么多索引类型可以先分两大类理解：</p>
+
+<ol>
+<li>聚簇索引，一般也是主键索引，它的叶子节点是放实际的行记录数据。</li>
+<li>普通索引，是以特定一个或多个列作为索引。叶子节点存列字段+主键，所以通过普通索引查数据，是需要回表（即再查一次聚簇索引）。</li>
+</ol>
+
+<p>而普通所以可以衍生出唯一索引、联合索引、二级索引、字符串前缀索引。</p>
+
+<p><strong>唯一索引：</strong>可以指定一个或多个列做为索引列，每次insert时，会通过它做唯一约束。如果唯一索引的列项值重复了，就insert失败。</p>
+
+<p><strong>联合索引：</strong>指定一个以上的列作为索引列。通常联合索引还有索引覆盖的效果，即select特定的字段，这些字段刚好是联合索引的索引列字段。这时就不用回表了。</p>
+
+<p><strong>二级索引：</strong>只有一个列作为索引列。</p>
+
+<p><strong>字符串前缀索引：</strong>索引列是char或varchar类型，然后可以只取前n位的字符作为索引。例如对于邮箱abc@qq.com这种数据，@后面的字符串区分度通常不高。用字符串前缀索引就能更节省空间了。</p>
+
+<h3 id="四种事务隔离性">四种事务隔离性</h3>
+
+<p>读未提交、读已提交、可重复读、串行读。</p>
+
+<blockquote>
+<p>读未提交会有脏读、不可重复读、幻读</p>
+
+<p>读已提交会有不可重复读、幻读</p>
+
+<p>可重复读会有幻读</p>
+
+<p>以上是标准里不同隔离性可能会带来的问题。但mysql的默认隔离性可重复读解决了幻读问题</p>
+</blockquote>
+
+<h3 id="锁">锁</h3>
+
+<p>MDL锁、表锁、意向锁、行锁、gap锁(间隙锁)、next-key锁，insert意向锁。</p>
+
+<blockquote>
+<p>锁这么多，但按解决问题域来理解，就很方便了。</p>
+</blockquote>
+
+<p><strong>MDL</strong>解决DML和DDL两者冲突的。DML的时候，就不能执行DDL。</p>
+
+<p><strong>表锁</strong>是在行锁没有之前用来解决并发写问题的。写记录就只能锁表。更新一条记录锁整个表，显然成本太大，并发量上不去。</p>
+
+<p><strong>行锁</strong>可以提高并发量，因为只锁一行，其他行可以正常读写加锁。但要注意，加行锁也有维护成本，所以针对全表加行锁的成本比加表锁要大，这时行锁就升级为表锁了。(谨记生产环境执行前先看explain)。</p>
+
+<p>行锁细分为共享锁(select … lock in share mode)和排他锁(select … for update)。共享锁是大家都能读，不许写。排他锁是自许自己写，其他人可以读（可重复性读）。</p>
+
+<p><strong>意向锁</strong>类似预标记作用。假如行锁要升级成表锁，总不能扫全表看看有没有行记录上面是持有排他锁的吧，这样效率低。所以可以用意向锁做个标记，每次加行锁时，不管共享或排他，也同步给表加一个共享/排他意向锁。这样升级为表锁时，只看有哪些意向锁来决定是能立即升级，还是需要阻塞等待。</p>
+
+<p><strong>gap锁</strong>就是范围锁，左右都是开区间；<strong>next-key锁</strong>是gap+行锁的结合，左开右闭。这两者下文有介绍。</p>
+
+<p><strong>insert意向锁</strong>是用于防止不同事务同时插入相同的行记录(包括主键也是相同的)。</p>
+
+<p>最开始插入成功的事务，只要它未提交，其他事务插入相同数据行记录就会被阻塞（阻塞在S record lock上）。直到插入成功的事务提交或回滚。</p>
+
+<p>如果提交了，那其他事务就会出现主键冲突。</p>
+
+<p>如果回滚了，那其他事务就会同时获得S record lock。这时会出现死锁。因为S record lock需要升级为写锁，但大家都持有S record lock不释放。所以mysql只好把除了第一个获取S record lock之外的事务断开。</p>
+
+<h3 id="开始串">开始串</h3>
+
+<p>事务是数据库必须提供的保证，不然也不敢用。掉数据或数据不一致的情况，大部分业务都接受不了。</p>
+
+<p>事务有ACID四个特性。<strong>而mysql对于其中隔离性的实现，一部分是把锁作用在索引上来解决幻读问题。另一部分是使用了MVCC解决不可重复读问题。</strong></p>
+
+<p>简述下MVCC，实现原理是<strong>版本链</strong> + <strong>维护当前活跃事务ID列表</strong>。</p>
+
+<p>版本链这个东西，就是聚簇索引叶子节点在存行记录时，额外插了两个字段：<strong>trx_id</strong>和<strong>roll_pointer</strong>。分别表示当前行记录是由哪个事务更新的和当前行记录回滚时用到的行数据（等于行的变更记录会以链表串起来以防回滚，直到事务提交才会释放）。</p>
+
+<p>版本链就是这个roll_pointer串起来的链表。</p>
+
+<p>再维护一个活跃事务ID列表。每个事务开始时，针对这个事务会维护一个数组，把当前活跃并没提交和回滚的事务ID全放里面。</p>
+
+<p>注意事务ID是全局递增的，等于每个事务启动时，事务ID就被划分为三部分：</p>
+
+<p><strong>[ 已提交的事务(A)，未提交的事务(B)，未来可能启动的新事务&copy; ]</strong></p>
+
+<p>B部分就是当前活跃事务ID列表了。所以，在事务中select数据时，可重复读的保证实现原理是从版本链当前记录开始顺着roll_pointer向前捣腾，每次都跟记录的trx_id做对比：</p>
+
+<ul>
+<li>在C里的，不能读，未来的事务不关我事。继续捣腾下去；</li>
+<li>在B里的，不能读，因为我事务开始你们都没提交呢。<strong>但有个例外</strong>，就是在B里读到trx_id是自己，等于是自己在自己事务里改的嘛，就可以读。</li>
+<li>在A里的，可以读，因为事务都提交了。</li>
+</ul>
+
+<p>接着看看怎么解决幻读问题。</p>
+
+<blockquote>
+<p>幻读本质是指同样的语句在一个事务里多次执行竟然结果不一致。</p>
+</blockquote>
+
+<p>innodb解决幻读用了gap锁和next-key锁。</p>
+
+<p>例如开启事务，执行select * from users where age=20。而age列是有普通索引，前后记录分别是10和30。这时对于这个select语句就上了两个锁，一个next-key和一个gap。即(10, 20]，(20,30)这两个范围被锁住了，别的事务insert会被阻塞。</p>
+
+<p>奇怪了，对于这条select语句解决幻读，直接不让插入age=20的记录不就好了吗。为啥要锁这么大的范围？</p>
+
+<p>没错，就是锁这么大的范围（具体原因我也没仔细研究源码不太清楚，估计是为了实现上方便）。</p>
+
+<p>但有例外啦，如果这个age是主键或者是唯一索引，就改成锁age=20这一条记录就行，为啥？</p>
+
+<p>想一想，这两种索引都有唯一性的约束，别的事务再插入age=20会先卡在唯一性约束检查这一步。</p>
+
+<p>这种防止幻读的加锁，是加在索引上的。步骤是先分析where条件看能不能用上索引，能用上，就按where条件检索数据时，<strong>把遍历到的行记录都给记上next-key锁，直到遇到第一个不满足的行记录时，就把next-key改为gap锁。</strong></p>
+
+<p>针对上面的select语句来推导一下，那个(20,30)的范围，就是原来next-key锁改为gap锁。(20,30] -&gt; (20,30)。</p>
+
+<blockquote>
+<p>注意，这个加锁过程只是适用于普通索引(非唯一索引)</p>
+
+<p>主键索引和唯一索引不用锁范围，上面也说过了</p>
+</blockquote>
+
+<p>但mysql在分析select语句时，可能执行计划是扫全表。或where里根本就没有明确给出索引列字段。这时的next-key锁和gap锁就是锁全表了。毕竟你也扫描全表了。</p>
+
+<p>还有个疑问，假如10是第一条记录，30是最后一条，那10的前面和30的后面让insert么？也不让。因为innodb默认加了一个最小行和最大行，所以就会默认就有两个锁，(无穷小,10]和(30,无穷大)。前者是next-key锁，后者是gap锁。</p>
+
+<p>简单总结下就是上面的扫描过程，只是对主键索引和唯一索引不作效。除了它们，其它不管是二级索引、联合索引等，或是全表扫，都作效。</p>
+
+<p>其实比较合理，用这一套扫描规则来加范围锁，代码会更好维护。即使锁的范围广了一些，也可以接受。设计方案往往都是折中的，就看牺牲什么了。只要事务执行足够快，锁范围广一些可以接受。毕竟大事务是开发中已经极力避免的。</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/redis%E5%86%85%E5%AD%98%E6%B7%98%E6%B1%B0lru%E5%92%8Clfu/" data-toggle="tooltip" data-placement="top" title="Redis(5.0.3)内存淘汰LRU/LFU">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
