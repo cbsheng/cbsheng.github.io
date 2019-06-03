@@ -7,10 +7,19 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
-    <lastBuildDate>Tue, 26 Mar 2019 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 02 Jun 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/categories/golang/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>go的channel源码层理解</title>
+      <link>http://cbsheng.github.io/posts/go%E7%9A%84channel%E6%BA%90%E7%A0%81%E5%B1%82%E7%90%86%E8%A7%A3/</link>
+      <pubDate>Sun, 02 Jun 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/go%E7%9A%84channel%E6%BA%90%E7%A0%81%E5%B1%82%E7%90%86%E8%A7%A3/</guid>
+      <description>&lt;p&gt;&lt;/p&gt;</description>
+    </item>
     
     <item>
       <title>fasthttp源码&amp;最佳实践分析</title>

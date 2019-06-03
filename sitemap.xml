@@ -3,6 +3,11 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
+    <loc>http://cbsheng.github.io/posts/go%E7%9A%84channel%E6%BA%90%E7%A0%81%E5%B1%82%E7%90%86%E8%A7%A3/</loc>
+    <lastmod>2019-06-02T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
     <loc>http://cbsheng.github.io/posts/%E7%AE%80%E5%8D%95%E7%BB%93%E5%90%88mysql%E7%B4%A2%E5%BC%95%E9%9A%94%E7%A6%BB%E6%80%A7%E5%92%8C%E9%94%81%E7%90%86%E8%A7%A3/</loc>
     <lastmod>2019-06-01T00:00:00+00:00</lastmod>
   </url>
@@ -109,13 +114,13 @@
   
   <url>
     <loc>http://cbsheng.github.io/tags/go/</loc>
-    <lastmod>2019-03-26T00:00:00+00:00</lastmod>
+    <lastmod>2019-06-02T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
   <url>
     <loc>http://cbsheng.github.io/categories/golang/</loc>
-    <lastmod>2019-03-26T00:00:00+00:00</lastmod>
+    <lastmod>2019-06-02T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
@@ -157,7 +162,7 @@
   
   <url>
     <loc>http://cbsheng.github.io/posts/</loc>
-    <lastmod>2019-06-01T00:00:00+00:00</lastmod>
+    <lastmod>2019-06-02T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
@@ -210,7 +215,7 @@
   
   <url>
     <loc>http://cbsheng.github.io/</loc>
-    <lastmod>2019-06-01T00:00:00+00:00</lastmod>
+    <lastmod>2019-06-02T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
