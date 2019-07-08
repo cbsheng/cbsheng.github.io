@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>GODEBUG之gctrace解析 - 无远弗届</title>
+  <meta property="og:title" content="GODEBUG之gctrace解析 - 无远弗届" />
+  <meta name="twitter:title" content="GODEBUG之gctrace解析 - 无远弗届" />
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta name="twitter:description" content="">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="无远弗届" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/godebug%E4%B9%8Bgctrace%E8%A7%A3%E6%9E%90/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">无远弗届</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">GODEBUG之gctrace解析</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>July 8, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/go/">
+            <i class="fas fa-tag"></i>
+            go
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/godebug/">
+            <i class="fas fa-tag"></i>
+            GODEBUG
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  
+</aside>
+      <p></p>
+
+<p>gctrace用途主要是用于跟踪GC的不同阶段的耗时与GC前后的内存量对比。信息比较简洁，可以用于对runtime本身进行调试之外，还可以观察线上应用的GC情况。</p>
+
+<p>像Dave Cheney就写了一个工具<a href="https://github.com/davecheney/gcvis">gcvis</a>专门用于分析gctrace的输出，通过可视化的方式展示出指标的变化。</p>
+
+<p>如果你只关心每次GC的整体STW耗时，而对每次GC的mark与markTermination这两个阶段各自的STW耗时，包括不同的mark workers执行时间耗时不感兴趣的话。那只需要采集memstats.pauseNs这个指标就可以。因为它记录了两次mark的过程中STW的耗时。</p>
+
+<p>下面给出gctrace的用法和输出结果字段详细解释。</p>
+
+<blockquote>
+<p>以下分析基于go 1.9.3</p>
+</blockquote>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="lnt">1
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="nv">GODEBUG</span><span class="o">=</span><span class="s1">&#39;gctrace=1&#39;</span> go run main.go</code></pre></td></tr></table>
+</div>
+</div>
+<p>只需要在run命名前加上一个环境变量。runtime就自动分析出gctrace=1，然后在程序运行的时候，输出相关的统计信息。</p>
+
+<p>GODEBUG变量支持14个参数。在<a href="https://golang.org/pkg/runtime/">runtime</a>包的doc里其实都有简单介绍。在调度器初始化方法schedinit里，会调用一个parsedebugvars方法对GODEBUG进行初始化。</p>
+
+<p>看下这块的源码：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 这些flag可以通过在go run 命令中设置GODEBUG变量来使用。但每个flag的不同取值对应的含义并没常量标识，都是硬编码
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">debug</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">allocfreetrace</span>   <span class="kt">int32</span>
+	<span class="nx">cgocheck</span>         <span class="kt">int32</span>
+	<span class="nx">efence</span>           <span class="kt">int32</span>
+	<span class="nx">gccheckmark</span>      <span class="kt">int32</span>
+	<span class="nx">gcpacertrace</span>     <span class="kt">int32</span>
+	<span class="nx">gcshrinkstackoff</span> <span class="kt">int32</span>
+	<span class="nx">gcrescanstacks</span>   <span class="kt">int32</span>
+	<span class="nx">gcstoptheworld</span>   <span class="kt">int32</span>
+	<span class="nx">gctrace</span>          <span class="kt">int32</span>
+	<span class="nx">invalidptr</span>       <span class="kt">int32</span>
+	<span class="nx">sbrk</span>             <span class="kt">int32</span>
+	<span class="nx">scavenge</span>         <span class="kt">int32</span>
+	<span class="nx">scheddetail</span>      <span class="kt">int32</span>
+	<span class="nx">schedtrace</span>       <span class="kt">int32</span>
+<span class="p">}</span>
+
+<span class="kd">var</span> <span class="nx">dbgvars</span> <span class="p">=</span> <span class="p">[]</span><span class="nx">dbgVar</span><span class="p">{</span>
+	<span class="p">{</span><span class="s">&#34;allocfreetrace&#34;</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">debug</span><span class="p">.</span><span class="nx">allocfreetrace</span><span class="p">},</span>
+	<span class="p">{</span><span class="s">&#34;cgocheck&#34;</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">debug</span><span class="p">.</span><span class="nx">cgocheck</span><span class="p">},</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">parsedebugvars</span><span class="p">()</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>
+	<span class="k">for</span> <span class="nx">p</span> <span class="o">:=</span> <span class="nx">gogetenv</span><span class="p">(</span><span class="s">&#34;GODEBUG&#34;</span><span class="p">);</span> <span class="nx">p</span> <span class="o">!=</span> <span class="s">&#34;&#34;</span><span class="p">;</span> <span class="p">{</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>	<span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>gctrace取值可以等于1，或任何大于1的数。</p>
+
+<p>下面的输出来自取值等于1：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="lnt">1
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell">gc <span class="m">252</span> @4316.062s <span class="m">0</span>%: <span class="m">0</span>.013+2.9+0.050 ms clock, <span class="m">0</span>.10+0.23/5.4/12+0.40 ms cpu, <span class="m">16</span>-&gt;17-&gt;8 MB, <span class="m">17</span> MB goal, <span class="m">8</span> P</code></pre></td></tr></table>
+</div>
+</div>
+<p>顺便也贴出官方写的简单介绍</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="nx">Currently</span><span class="p">,</span> <span class="nx">it</span> <span class="nx">is</span><span class="p">:</span>
+    <span class="nx">gc</span> <span class="err">#</span> <span class="err">@#</span><span class="nx">s</span> <span class="err">#</span><span class="o">%</span><span class="p">:</span> <span class="err">#</span><span class="o">+</span><span class="err">#</span><span class="o">+</span><span class="err">#</span> <span class="nx">ms</span> <span class="nx">clock</span><span class="p">,</span> <span class="err">#</span><span class="o">+</span><span class="err">#</span><span class="o">/</span><span class="err">#</span><span class="o">/</span><span class="err">#</span><span class="o">+</span><span class="err">#</span> <span class="nx">ms</span> <span class="nx">cpu</span><span class="p">,</span> <span class="err">#</span><span class="o">-</span><span class="p">&gt;</span><span class="err">#</span><span class="o">-</span><span class="p">&gt;</span><span class="err">#</span> <span class="nx">MB</span><span class="p">,</span> <span class="err">#</span> <span class="nx">MB</span> <span class="nx">goal</span><span class="p">,</span> <span class="err">#</span> <span class="nx">P</span>
+<span class="nx">where</span> <span class="nx">the</span> <span class="nx">fields</span> <span class="nx">are</span> <span class="nx">as</span> <span class="nx">follows</span><span class="p">:</span>
+    <span class="nx">gc</span> <span class="err">#</span>        <span class="nx">the</span> <span class="nx">GC</span> <span class="nx">number</span><span class="p">,</span> <span class="nx">incremented</span> <span class="nx">at</span> <span class="nx">each</span> <span class="nx">GC</span>
+    <span class="err">@#</span><span class="nx">s</span>         <span class="nx">time</span> <span class="nx">in</span> <span class="nx">seconds</span> <span class="nx">since</span> <span class="nx">program</span> <span class="nx">start</span>
+    <span class="err">#</span><span class="o">%</span>          <span class="nx">percentage</span> <span class="nx">of</span> <span class="nx">time</span> <span class="nx">spent</span> <span class="nx">in</span> <span class="nx">GC</span> <span class="nx">since</span> <span class="nx">program</span> <span class="nx">start</span>
+    <span class="err">#</span><span class="o">+...+</span><span class="err">#</span>     <span class="nx">wall</span><span class="o">-</span><span class="nx">clock</span><span class="o">/</span><span class="nx">CPU</span> <span class="nx">times</span> <span class="k">for</span> <span class="nx">the</span> <span class="nx">phases</span> <span class="nx">of</span> <span class="nx">the</span> <span class="nx">GC</span>
+    <span class="err">#</span><span class="o">-</span><span class="p">&gt;</span><span class="err">#</span><span class="o">-</span><span class="p">&gt;</span><span class="err">#</span> <span class="nx">MB</span>  <span class="nx">heap</span> <span class="nx">size</span> <span class="nx">at</span> <span class="nx">GC</span> <span class="nx">start</span><span class="p">,</span> <span class="nx">at</span> <span class="nx">GC</span> <span class="nx">end</span><span class="p">,</span> <span class="nx">and</span> <span class="nx">live</span> <span class="nx">heap</span>
+    <span class="err">#</span> <span class="nx">MB</span> <span class="nx">goal</span>   <span class="nx">goal</span> <span class="nx">heap</span> <span class="nx">size</span>
+    <span class="err">#</span> <span class="nx">P</span>         <span class="nx">number</span> <span class="nx">of</span> <span class="nx">processors</span> <span class="nx">used</span>
+<span class="nx">The</span> <span class="nx">phases</span> <span class="nx">are</span> <span class="nx">stop</span><span class="o">-</span><span class="nx">the</span><span class="o">-</span><span class="nx">world</span> <span class="p">(</span><span class="nx">STW</span><span class="p">)</span> <span class="nx">sweep</span> <span class="nx">termination</span><span class="p">,</span> <span class="nx">concurrent</span>
+<span class="nx">mark</span> <span class="nx">and</span> <span class="nx">scan</span><span class="p">,</span> <span class="nx">and</span> <span class="nx">STW</span> <span class="nx">mark</span> <span class="nx">termination</span><span class="p">.</span> <span class="nx">The</span> <span class="nx">CPU</span> <span class="nx">times</span>
+<span class="k">for</span> <span class="nx">mark</span><span class="o">/</span><span class="nx">scan</span> <span class="nx">are</span> <span class="nx">broken</span> <span class="nx">down</span> <span class="nx">in</span> <span class="nx">to</span> <span class="nx">assist</span> <span class="nx">time</span> <span class="p">(</span><span class="nx">GC</span> <span class="nx">performed</span> <span class="nx">in</span>
+<span class="nx">line</span> <span class="nx">with</span> <span class="nx">allocation</span><span class="p">),</span> <span class="nx">background</span> <span class="nx">GC</span> <span class="nx">time</span><span class="p">,</span> <span class="nx">and</span> <span class="nx">idle</span> <span class="nx">GC</span> <span class="nx">time</span><span class="p">.</span>
+<span class="nx">If</span> <span class="nx">the</span> <span class="nx">line</span> <span class="nx">ends</span> <span class="nx">with</span> <span class="s">&#34;(forced)&#34;</span><span class="p">,</span> <span class="nx">this</span> <span class="nx">GC</span> <span class="nx">was</span> <span class="nx">forced</span> <span class="nx">by</span> <span class="nx">a</span>
+<span class="nx">runtime</span><span class="p">.</span><span class="nx">GC</span><span class="p">()</span> <span class="nx">call</span> <span class="nx">and</span> <span class="nx">all</span> <span class="nx">phases</span> <span class="nx">are</span> <span class="nx">STW</span><span class="p">.</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>在看过runtime里GC和内存管理源码后，以上面给出的输出为例，通俗介绍下这些不同部分的含义。</p>
+
+<p><strong>gc 252：</strong> 这是第252次gc。</p>
+
+<p><strong>@4316.062s：</strong> 这次gc的markTermination阶段完成后，距离runtime启动到现在的时间。</p>
+
+<p><strong>0%：</strong>当目前为止，gc的标记工作（包括两次mark阶段的STW和并发标记）所用的CPU时间占总CPU的百分比。</p>
+
+<p><strong>0.013+2.9+0.050 ms clock：</strong>按顺序分成三部分，0.013表示mark阶段的STW时间（单P的）；2.9表示并发标记用的时间（所有P的）；0.050表示markTermination阶段的STW时间（单P的）。</p>
+
+<p><strong>0.10+0.<sup>23</sup>&frasl;<sub>5</sub>.<sup>4</sup>&frasl;<sub>12</sub>+0.40 ms cpu：</strong>按顺序分成三部分，0.10表示整个进程在mark阶段STW停顿时间(0.013 * 8)；0.<sup>23</sup>&frasl;<sub>5</sub>.4/12有三块信息，0.23是mutator assists占用的时间，5.4是dedicated mark workers+fractional mark worker占用的时间，12是idle mark workers占用的时间。这三块时间加起来会接近2.9*8(P的个数)；0.40 ms表示整个进程在markTermination阶段STW停顿时间(0.050 * 8)。</p>
+
+<p><strong>16-&gt;17-&gt;8 MB：</strong>按顺序分成三部分，16表示开始mark阶段前的heap_live大小；17表示开始markTermination阶段前的heap_live大小；8表示被标记对象的大小。</p>
+
+<p><strong>17 MB goal：</strong>表示下一次触发GC的内存占用阀值是17MB，等于8MB * 2，向上取整。</p>
+
+<p><strong>8 P：</strong>本次gc共有多少个P。</p>
+
+<p>补充说明两点：</p>
+
+<p>一、heap_live要结合go的内存管理来理解。因为go按照不同的对象大小，会分配不同页数的span。span是对内存页进行管理的基本单元，每页8k大小。所以肯定会出现span中有内存是空闲着没被用上的。</p>
+
+<p>不过怎么用go先不管，反正是把它划分给程序用了。而heap_live就表示所有span的大小。</p>
+
+<p>而程序到底用了多少呢？就是在GC扫描对象时，扫描到的存活对象大小就是已用的大小。对应上面就是8MB。</p>
+
+<p>二、mark worker分为三种，dedicated、fractional和idle。分别表示标记工作干活时的专注程度。dedicated最专注，除非被抢占打断，否则一直干活。idle最偷懒，干一点活就退出，控制权让给出别的goroutine。它们是并发标记工作里的worker。</p>
+
+<p>这块输出的源码为：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span><span class="lnt">28
+</span><span class="lnt">29
+</span><span class="lnt">30
+</span><span class="lnt">31
+</span><span class="lnt">32
+</span><span class="lnt">33
+</span><span class="lnt">34
+</span><span class="lnt">35
+</span><span class="lnt">36
+</span><span class="lnt">37
+</span><span class="lnt">38
+</span><span class="lnt">39
+</span><span class="lnt">40
+</span><span class="lnt">41
+</span><span class="lnt">42
+</span><span class="lnt">43
+</span><span class="lnt">44
+</span><span class="lnt">45
+</span><span class="lnt">46
+</span><span class="lnt">47
+</span><span class="lnt">48
+</span><span class="lnt">49
+</span><span class="lnt">50
+</span><span class="lnt">51
+</span><span class="lnt">52
+</span><span class="lnt">53
+</span><span class="lnt">54
+</span><span class="lnt">55
+</span><span class="lnt">56
+</span><span class="lnt">57
+</span><span class="lnt">58
+</span><span class="lnt">59
+</span><span class="lnt">60
+</span><span class="lnt">61
+</span><span class="lnt">62
+</span><span class="lnt">63
+</span><span class="lnt">64
+</span><span class="lnt">65
+</span><span class="lnt">66
+</span><span class="lnt">67
+</span><span class="lnt">68
+</span><span class="lnt">69
+</span><span class="lnt">70
+</span><span class="lnt">71
+</span><span class="lnt">72
+</span><span class="lnt">73
+</span><span class="lnt">74
+</span><span class="lnt">75
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">type</span> <span class="nx">work</span> <span class="kd">struct</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// tSweepTerm 开始mark阶段前的时间戳
+</span><span class="c1"></span>	<span class="c1">// tMark mark阶段完成后的时间戳
+</span><span class="c1"></span>	<span class="c1">// tMarkTerm markTermination阶段开始前的时间戳
+</span><span class="c1"></span>	<span class="c1">// tEnd markTermination阶段结束后的时间戳
+</span><span class="c1"></span>	<span class="nx">tSweepTerm</span><span class="p">,</span> <span class="nx">tMark</span><span class="p">,</span> <span class="nx">tMarkTerm</span><span class="p">,</span> <span class="nx">tEnd</span> <span class="kt">int64</span> <span class="c1">// nanotime() of phase start
+</span><span class="c1"></span>
+  <span class="c1">// heap0 开始mark阶段前，当前heap_live的大小
+</span><span class="c1"></span>	<span class="c1">// heap1 开始marktermination阶段前，当前heap_live的大小
+</span><span class="c1"></span>	<span class="c1">// heap2 这次GC对heap_live大小的内存进行标记对象的大小
+</span><span class="c1"></span>	<span class="c1">// heapGoal 下次触发GC的内存占用目标阀值
+</span><span class="c1"></span>	<span class="nx">heap0</span><span class="p">,</span> <span class="nx">heap1</span><span class="p">,</span> <span class="nx">heap2</span><span class="p">,</span> <span class="nx">heapGoal</span> <span class="kt">uint64</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">gcMarkTermination</span><span class="p">(</span><span class="nx">nextTriggerRatio</span> <span class="kt">float64</span><span class="p">)</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>
+  <span class="c1">// mark阶段的STW时间
+</span><span class="c1"></span>	<span class="nx">sweepTermCpu</span> <span class="o">:=</span> <span class="nb">int64</span><span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">stwprocs</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">tMark</span> <span class="o">-</span> <span class="nx">work</span><span class="p">.</span><span class="nx">tSweepTerm</span><span class="p">)</span>
+
+	<span class="c1">// 并行mark所占用的CPU时间
+</span><span class="c1"></span>	<span class="nx">markCpu</span> <span class="o">:=</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">assistTime</span> <span class="o">+</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">dedicatedMarkTime</span> <span class="o">+</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">fractionalMarkTime</span>
+
+	<span class="c1">// markTermination阶段的STW时间
+</span><span class="c1"></span>	<span class="nx">markTermCpu</span> <span class="o">:=</span> <span class="nb">int64</span><span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">stwprocs</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">tEnd</span> <span class="o">-</span> <span class="nx">work</span><span class="p">.</span><span class="nx">tMarkTerm</span><span class="p">)</span>
+
+	<span class="c1">// 整个标记所占用的时间
+</span><span class="c1"></span>	<span class="nx">cycleCpu</span> <span class="o">:=</span> <span class="nx">sweepTermCpu</span> <span class="o">+</span> <span class="nx">markCpu</span> <span class="o">+</span> <span class="nx">markTermCpu</span>
+	<span class="nx">work</span><span class="p">.</span><span class="nx">totaltime</span> <span class="o">+=</span> <span class="nx">cycleCpu</span>
+
+  <span class="c1">// 总CPU时间
+</span><span class="c1"></span>	<span class="nx">totalCpu</span> <span class="o">:=</span> <span class="nx">sched</span><span class="p">.</span><span class="nx">totaltime</span> <span class="o">+</span> <span class="p">(</span><span class="nx">now</span><span class="o">-</span><span class="nx">sched</span><span class="p">.</span><span class="nx">procresizetime</span><span class="p">)</span><span class="o">*</span><span class="nb">int64</span><span class="p">(</span><span class="nx">gomaxprocs</span><span class="p">)</span>
+  <span class="c1">// 整个标记所占用的时间 / 总CPU时间 。 不能超过25%
+</span><span class="c1"></span>	<span class="nx">memstats</span><span class="p">.</span><span class="nx">gc_cpu_fraction</span> <span class="p">=</span> <span class="nb">float64</span><span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">totaltime</span><span class="p">)</span> <span class="o">/</span> <span class="nb">float64</span><span class="p">(</span><span class="nx">totalCpu</span><span class="p">)</span>
+
+
+  <span class="k">if</span> <span class="nx">debug</span><span class="p">.</span><span class="nx">gctrace</span> <span class="p">&gt;</span> <span class="mi">0</span> <span class="p">{</span>
+		<span class="nx">util</span> <span class="o">:=</span> <span class="nb">int</span><span class="p">(</span><span class="nx">memstats</span><span class="p">.</span><span class="nx">gc_cpu_fraction</span> <span class="o">*</span> <span class="mi">100</span><span class="p">)</span>
+
+		<span class="kd">var</span> <span class="nx">sbuf</span> <span class="p">[</span><span class="mi">24</span><span class="p">]</span><span class="kt">byte</span>
+		<span class="nx">printlock</span><span class="p">()</span>
+		<span class="nb">print</span><span class="p">(</span><span class="s">&#34;gc &#34;</span><span class="p">,</span> <span class="nx">memstats</span><span class="p">.</span><span class="nx">numgc</span><span class="p">,</span>
+			<span class="s">&#34; @&#34;</span><span class="p">,</span> <span class="nb">string</span><span class="p">(</span><span class="nx">itoaDiv</span><span class="p">(</span><span class="nx">sbuf</span><span class="p">[:],</span> <span class="nb">uint64</span><span class="p">(</span><span class="nx">work</span><span class="p">.</span><span class="nx">tSweepTerm</span><span class="o">-</span><span class="nx">runtimeInitTime</span><span class="p">)</span><span class="o">/</span><span class="mf">1e6</span><span class="p">,</span> <span class="mi">3</span><span class="p">)),</span> <span class="s">&#34;s &#34;</span><span class="p">,</span>
+			<span class="nx">util</span><span class="p">,</span> <span class="s">&#34;%: &#34;</span><span class="p">)</span>
+		<span class="nx">prev</span> <span class="o">:=</span> <span class="nx">work</span><span class="p">.</span><span class="nx">tSweepTerm</span>
+		<span class="k">for</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">ns</span> <span class="o">:=</span> <span class="k">range</span> <span class="p">[]</span><span class="kt">int64</span><span class="p">{</span><span class="nx">work</span><span class="p">.</span><span class="nx">tMark</span><span class="p">,</span> <span class="nx">work</span><span class="p">.</span><span class="nx">tMarkTerm</span><span class="p">,</span> <span class="nx">work</span><span class="p">.</span><span class="nx">tEnd</span><span class="p">}</span> <span class="p">{</span>
+			<span class="k">if</span> <span class="nx">i</span> <span class="o">!=</span> <span class="mi">0</span> <span class="p">{</span>
+				<span class="nb">print</span><span class="p">(</span><span class="s">&#34;+&#34;</span><span class="p">)</span>
+			<span class="p">}</span>
+			<span class="nb">print</span><span class="p">(</span><span class="nb">string</span><span class="p">(</span><span class="nx">fmtNSAsMS</span><span class="p">(</span><span class="nx">sbuf</span><span class="p">[:],</span> <span class="nb">uint64</span><span class="p">(</span><span class="nx">ns</span><span class="o">-</span><span class="nx">prev</span><span class="p">))))</span>
+			<span class="nx">prev</span> <span class="p">=</span> <span class="nx">ns</span>
+		<span class="p">}</span>
+		<span class="nb">print</span><span class="p">(</span><span class="s">&#34; ms clock, &#34;</span><span class="p">)</span>
+		<span class="k">for</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">ns</span> <span class="o">:=</span> <span class="k">range</span> <span class="p">[]</span><span class="kt">int64</span><span class="p">{</span><span class="nx">sweepTermCpu</span><span class="p">,</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">assistTime</span><span class="p">,</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">dedicatedMarkTime</span> <span class="o">+</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">fractionalMarkTime</span><span class="p">,</span> <span class="nx">gcController</span><span class="p">.</span><span class="nx">idleMarkTime</span><span class="p">,</span> <span class="nx">markTermCpu</span><span class="p">}</span> <span class="p">{</span>
+			<span class="k">if</span> <span class="nx">i</span> <span class="o">==</span> <span class="mi">2</span> <span class="o">||</span> <span class="nx">i</span> <span class="o">==</span> <span class="mi">3</span> <span class="p">{</span>
+				<span class="c1">// Separate mark time components with /.
+</span><span class="c1"></span>				<span class="nb">print</span><span class="p">(</span><span class="s">&#34;/&#34;</span><span class="p">)</span>
+			<span class="p">}</span> <span class="k">else</span> <span class="k">if</span> <span class="nx">i</span> <span class="o">!=</span> <span class="mi">0</span> <span class="p">{</span>
+				<span class="nb">print</span><span class="p">(</span><span class="s">&#34;+&#34;</span><span class="p">)</span>
+			<span class="p">}</span>
+			<span class="nb">print</span><span class="p">(</span><span class="nb">string</span><span class="p">(</span><span class="nx">fmtNSAsMS</span><span class="p">(</span><span class="nx">sbuf</span><span class="p">[:],</span> <span class="nb">uint64</span><span class="p">(</span><span class="nx">ns</span><span class="p">))))</span>
+		<span class="p">}</span>
+		<span class="nb">print</span><span class="p">(</span><span class="s">&#34; ms cpu, &#34;</span><span class="p">,</span>
+			<span class="nx">work</span><span class="p">.</span><span class="nx">heap0</span><span class="o">&gt;&gt;</span><span class="mi">20</span><span class="p">,</span> <span class="s">&#34;-&gt;&#34;</span><span class="p">,</span> <span class="nx">work</span><span class="p">.</span><span class="nx">heap1</span><span class="o">&gt;&gt;</span><span class="mi">20</span><span class="p">,</span> <span class="s">&#34;-&gt;&#34;</span><span class="p">,</span> <span class="nx">work</span><span class="p">.</span><span class="nx">heap2</span><span class="o">&gt;&gt;</span><span class="mi">20</span><span class="p">,</span> <span class="s">&#34; MB, &#34;</span><span class="p">,</span>
+			<span class="nx">work</span><span class="p">.</span><span class="nx">heapGoal</span><span class="o">&gt;&gt;</span><span class="mi">20</span><span class="p">,</span> <span class="s">&#34; MB goal, &#34;</span><span class="p">,</span>
+			<span class="nx">work</span><span class="p">.</span><span class="nx">maxprocs</span><span class="p">,</span> <span class="s">&#34; P&#34;</span><span class="p">)</span>
+		<span class="k">if</span> <span class="nx">work</span><span class="p">.</span><span class="nx">userForced</span> <span class="p">{</span>
+			<span class="nb">print</span><span class="p">(</span><span class="s">&#34; (forced)&#34;</span><span class="p">)</span>
+		<span class="p">}</span>
+		<span class="nb">print</span><span class="p">(</span><span class="s">&#34;\n&#34;</span><span class="p">)</span>
+		<span class="nx">printunlock</span><span class="p">()</span>
+	<span class="p">}</span>
+
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/golang%E6%A0%87%E5%87%86%E5%BA%93sync.pool%E5%8E%9F%E7%90%86%E5%8F%8A%E6%BA%90%E7%A0%81%E7%AE%80%E6%9E%90/" data-toggle="tooltip" data-placement="top" title="golang标准库sync.Pool原理及源码简析">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2018 cbsheng</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

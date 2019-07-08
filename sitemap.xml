@@ -3,6 +3,11 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
+    <loc>http://cbsheng.github.io/posts/godebug%E4%B9%8Bgctrace%E8%A7%A3%E6%9E%90/</loc>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
     <loc>http://cbsheng.github.io/posts/golang%E6%A0%87%E5%87%86%E5%BA%93sync.pool%E5%8E%9F%E7%90%86%E5%8F%8A%E6%BA%90%E7%A0%81%E7%AE%80%E6%9E%90/</loc>
     <lastmod>2019-06-07T00:00:00+00:00</lastmod>
   </url>
@@ -119,13 +124,19 @@
   
   <url>
     <loc>http://cbsheng.github.io/tags/go/</loc>
-    <lastmod>2019-06-07T00:00:00+00:00</lastmod>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://cbsheng.github.io/tags/godebug/</loc>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
   <url>
     <loc>http://cbsheng.github.io/categories/golang/</loc>
-    <lastmod>2019-06-07T00:00:00+00:00</lastmod>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
@@ -173,7 +184,7 @@
   
   <url>
     <loc>http://cbsheng.github.io/posts/</loc>
-    <lastmod>2019-06-07T00:00:00+00:00</lastmod>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
@@ -226,7 +237,7 @@
   
   <url>
     <loc>http://cbsheng.github.io/</loc>
-    <lastmod>2019-06-07T00:00:00+00:00</lastmod>
+    <lastmod>2019-07-08T00:00:00+00:00</lastmod>
     <priority>0</priority>
   </url>
   
