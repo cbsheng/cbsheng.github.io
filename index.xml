@@ -7,10 +7,19 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
-    <lastBuildDate>Fri, 26 Jul 2019 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sat, 27 Jul 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>你真的会用sync.WaitGroup吗</title>
+      <link>http://cbsheng.github.io/posts/%E4%BD%A0%E7%9C%9F%E7%9A%84%E4%BC%9A%E7%94%A8sync.waitgroup%E5%90%97/</link>
+      <pubDate>Sat, 27 Jul 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E4%BD%A0%E7%9C%9F%E7%9A%84%E4%BC%9A%E7%94%A8sync.waitgroup%E5%90%97/</guid>
+      <description>&lt;p&gt;&lt;/p&gt;</description>
+    </item>
     
     <item>
       <title>一份详细注释的go Mutex源码</title>
