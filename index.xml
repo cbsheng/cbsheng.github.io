@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes" ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>无远弗届</title>
+    <title>木白的技术私厨</title>
     <link>http://cbsheng.github.io/</link>
-    <description>Recent content on 无远弗届</description>
+    <description>Recent content on 木白的技术私厨</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <copyright>&amp;copy; Copyright 2017-2018 cbsheng</copyright>
+    <copyright>&amp;copy; Copyright 2017-2019 木白</copyright>
     <lastBuildDate>Sat, 27 Jul 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/index.xml" rel="self" type="application/rss+xml" />
