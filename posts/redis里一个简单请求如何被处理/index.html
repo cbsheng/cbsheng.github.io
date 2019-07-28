@@ -158,11 +158,11 @@
   <span class="k">for</span> <span class="p">(</span><span class="n">j</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="n">numcommands</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
     <span class="k">struct</span> <span class="n">redisCommand</span> <span class="o">*</span><span class="n">c</span> <span class="o">=</span> <span class="n">redisCommandTable</span><span class="o">+</span><span class="n">j</span><span class="p">;</span>
     <span class="c1">// ...
-</span><span class="c1"></span>  <span class="p">}</span>
-
-  <span class="c1">// 把每个命令放到哈希结构中
-</span><span class="c1"></span>  <span class="n">retval1</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
-  <span class="n">retval2</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">orig_commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+</span><span class="c1"></span>
+    <span class="c1">// 把每个命令放到哈希结构中
+</span><span class="c1"></span>    <span class="n">retval1</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+    <span class="n">retval2</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">orig_commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+  <span class="p">}</span>
 <span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
