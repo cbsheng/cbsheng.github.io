@@ -76,9 +76,9 @@
 <ul>
 <li>
 <ul>
-<li><a href="#零-在命令进入服务之前-服务器需要先初始化好自己">零、在命令进入服务之前，服务器需要先初始化好自己</a></li>
-<li><a href="#一-现在可以发送命令了">一、现在可以发送命令了</a></li>
-<li><a href="#二-返回命令执行结果">二、返回命令执行结果</a></li>
+<li><a href="#在命令进入服务之前-服务器需要先初始化好自己">在命令进入服务之前，服务器需要先初始化好自己</a></li>
+<li><a href="#现在可以发送命令了">现在可以发送命令了</a></li>
+<li><a href="#返回命令执行结果">返回命令执行结果</a></li>
 </ul></li>
 </ul></li>
 </ul>
@@ -87,7 +87,7 @@
       <p>set text &ldquo;hello world&rdquo; 从进入服务器到输出结果，整个流程是怎样的？带着这个问题来看看源码。
 </p>
 
-<h3 id="零-在命令进入服务之前-服务器需要先初始化好自己">零、在命令进入服务之前，服务器需要先初始化好自己</h3>
+<h3 id="在命令进入服务之前-服务器需要先初始化好自己">在命令进入服务之前，服务器需要先初始化好自己</h3>
 
 <p>与这个场景相关的，两件事比较重要：</p>
 
@@ -142,11 +142,14 @@
 </span><span class="lnt">18
 </span><span class="lnt">19
 </span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
 </span></code></pre></td>
 <td class="lntd">
 <pre class="chroma"><code class="language-c" data-lang="c"><span class="c1">// src/server.c
 </span><span class="c1"></span><span class="kt">void</span> <span class="nf">initServerConfig</span><span class="p">(</span><span class="kt">void</span><span class="p">)</span> <span class="p">{</span>
   <span class="c1">// ...
+</span><span class="c1"></span>  <span class="c1">// 设置命令映射表
 </span><span class="c1"></span>  <span class="n">populateCommandTable</span><span class="p">();</span>
   <span class="c1">// ...
 </span><span class="c1"></span><span class="p">}</span>
@@ -159,16 +162,17 @@
     <span class="k">struct</span> <span class="n">redisCommand</span> <span class="o">*</span><span class="n">c</span> <span class="o">=</span> <span class="n">redisCommandTable</span><span class="o">+</span><span class="n">j</span><span class="p">;</span>
     <span class="c1">// ...
 </span><span class="c1"></span>
-    <span class="c1">// 把每个命令放到哈希结构中
-</span><span class="c1"></span>    <span class="n">retval1</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
-    <span class="n">retval2</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">orig_commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+  	<span class="c1">// 把每个命令放到哈希结构中
+</span><span class="c1"></span>  	<span class="n">retval1</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+  	<span class="n">retval2</span> <span class="o">=</span> <span class="n">dictAdd</span><span class="p">(</span><span class="n">server</span><span class="p">.</span><span class="n">orig_commands</span><span class="p">,</span> <span class="n">sdsnew</span><span class="p">(</span><span class="n">c</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">),</span> <span class="n">c</span><span class="p">);</span>
+
   <span class="p">}</span>
 <span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
 <p>然后启动事件循环器，监听默认的6379端口，并设置socket为no_blocking。</p>
 
-<p>将监听6379的socket包装为一个aeFileEvent对象，通过<code>aeCreateFileEvent()</code>注册到事件循环器里。注册时，会还会注册一个回调函数<code>acceptTcpHandler()</code>。即有新连接要到来时，就调用回调函数进行accept。</p>
+<p>将监听6379端口的socket包装为一个aeFileEvent对象，通过<code>aeCreateFileEvent()</code>注册到事件循环器里。注册时，会还会注册一个回调函数<code>acceptTcpHandler()</code>。即有新连接要到来时，就调用回调函数进行accept。</p>
 
 <p>accept到的就是client连接。accept返回一个文件描述符，也将它注册进事件循环器里。这样之后client发起一个<code>set text &quot;hello world&quot;</code>请求到达server时，文件描述符变得可读，事件循环器会捕获到此事件并调用对应的回调函数<code>readQueryFromClient()</code>。</p>
 
@@ -384,19 +388,21 @@
 </span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
-<h3 id="一-现在可以发送命令了">一、现在可以发送命令了</h3>
+<h3 id="现在可以发送命令了">现在可以发送命令了</h3>
 
 <blockquote>
 <p>127.0.0.1:6379&gt; set text &ldquo;hello world&rdquo;</p>
 </blockquote>
 
-<p>敲下回车键，命令顺着TCP到了server后，accept到新的套接字，并且是可读状态。这下注册的回调函数<code>readQueryFromClient()</code>就被触发调用。它是所有命令的入口。</p>
+<p>敲下回车键，命令通过TCP协议到了server后，accept到新的套接字，并且是可读状态。</p>
+
+<p>这时注册的回调函数<code>readQueryFromClient()</code>就被触发调用。它是所有命令的入口。</p>
 
 <p>上面的源码也能看到，注册<code>readQueryFromClient()</code>之前，是为新连接创建一个client对象，命令的内容，client的属性，输入/输出缓冲区等都是与这个client绑定的。</p>
 
 <p><code>readQueryFromClient()</code>通过系统调用<code>read()</code>从套接字里读取命令，放在client.querybuf。读取的字节数是有限制的，读取到的内容也有长度长限，超过上限就会拒连释放client对象。</p>
 
-<p>对于流入流出redis的字节数，自然也是在read和write这两个环节进行记录。</p>
+<p>对于流入流出redis的字节数，自然也是在read和write这两个环节中被记录。</p>
 <div class="highlight"><div class="chroma">
 <table class="lntable"><tr><td class="lntd">
 <pre class="chroma"><code class="language-C" data-lang="C"><span class="lnt"> 1
@@ -479,7 +485,9 @@
 </div>
 <p><code>processInputBufferAndReplicate()</code>会区分client是不是master节点来响应命令，两种处理方式当然有些差别。不过这里我们先不关心replicate。</p>
 
-<p>读取的命令放在client.querybuf后，是需要按照redis的<a href="https://redis.io/topics/protocol">通信协议</a>进行解析的。解析完做一些常规的检查，例如命令是否存在，命名参数是否合法等。检查是在<code>processCommand()</code>里进行的。通过后，就可以调用注册好的命令回调函数来处理了。逻辑入口就是<code>processInputBuffer()</code></p>
+<p>读取的命令放在client.querybuf后，是需要按照redis的<a href="https://redis.io/topics/protocol">通信协议</a>进行解析的。解析完做一些常规的检查，例如命令是否存在，命名参数是否合法等。</p>
+
+<p>检查是在<code>processCommand()</code>里进行的。通过后，就可以调用注册好的命令回调函数来处理了。逻辑入口就是<code>processInputBuffer()</code></p>
 <div class="highlight"><div class="chroma">
 <table class="lntable"><tr><td class="lntd">
 <pre class="chroma"><code class="language-c" data-lang="c"><span class="lnt"> 1
@@ -702,7 +710,7 @@
 </div>
 <p>看完<code>addReply()</code>的整个处理过程，也看不到怎样给client发送回复，都是把回复内容写到输出缓冲区里。怎么返回client结果呢？</p>
 
-<h3 id="二-返回命令执行结果">二、返回命令执行结果</h3>
+<h3 id="返回命令执行结果">返回命令执行结果</h3>
 
 <p>其实在redis里，事件的处理顺序是：</p>
 
@@ -825,6 +833,7 @@
 <span class="p">}</span></code></pre></td></tr></table>
 </div>
 </div>
+<p>以上就是一个简单命令的处理流程。</p>
     </article>
 
     
