@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Golang实践 on 木白的技术私厨</title>
+    <link>http://cbsheng.github.io/tags/golang%E5%AE%9E%E8%B7%B5/</link>
+    <description>Recent content in Golang实践 on 木白的技术私厨</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <copyright>&amp;copy; Copyright 2017-2019 木白</copyright>
+    <lastBuildDate>Mon, 05 Aug 2019 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="http://cbsheng.github.io/tags/golang%E5%AE%9E%E8%B7%B5/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>请问sync.Pool有什么缺点?</title>
+      <link>http://cbsheng.github.io/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/</link>
+      <pubDate>Mon, 05 Aug 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/</guid>
+      <description>&lt;p&gt;&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>你真的会用sync.WaitGroup吗</title>
+      <link>http://cbsheng.github.io/posts/%E4%BD%A0%E7%9C%9F%E7%9A%84%E4%BC%9A%E7%94%A8sync.waitgroup%E5%90%97/</link>
+      <pubDate>Sat, 27 Jul 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E4%BD%A0%E7%9C%9F%E7%9A%84%E4%BC%9A%E7%94%A8sync.waitgroup%E5%90%97/</guid>
+      <description>&lt;p&gt;&lt;/p&gt;</description>
+    </item>
+    
+    <item>
+      <title>fasthttp源码&amp;最佳实践分析</title>
+      <link>http://cbsheng.github.io/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/</link>
+      <pubDate>Tue, 26 Mar 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/fasthttp%E6%BA%90%E7%A0%81%E6%9C%80%E4%BD%B3%E5%AE%9E%E8%B7%B5%E5%88%86%E6%9E%90/</guid>
+      <description>&lt;p&gt;fasthttp号称比net/http快十倍，并且更少的内存分配。性能测试可以自行执行go test -bench。&lt;/p&gt;
+
+&lt;p&gt;同时fasthttp也给出自己的&lt;a href=&#34;https://github.com/valyala/fasthttp#fasthttp-best-practices&#34;&gt;最佳实践&lt;/a&gt;。个人理解这些实践也算是gopher的基本功。&lt;/p&gt;
+
+&lt;p&gt;让我们来看看fasthttp在源码中是如何应用这些最佳实践的。
+&lt;/p&gt;</description>
+    </item>
+    
+  </channel>
+</rss>

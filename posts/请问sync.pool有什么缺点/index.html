@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>请问sync.Pool有什么缺点? - 木白的技术私厨</title>
+  <meta property="og:title" content="请问sync.Pool有什么缺点? - 木白的技术私厨" />
+  <meta name="twitter:title" content="请问sync.Pool有什么缺点? - 木白的技术私厨" />
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta name="twitter:description" content="">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="木白的技术私厨" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">木白的技术私厨</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">请问sync.Pool有什么缺点?</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>August 5, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
+            <i class="fas fa-folder"></i>
+            源码分析
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/golang%E5%AE%9E%E8%B7%B5/">
+            <i class="fas fa-tag"></i>
+            golang实践
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#取消每次gc默认对全部对象进行回收">取消每次GC默认对全部对象进行回收</a></li>
+<li><a href="#使用无锁队列替换shared区">使用无锁队列替换shared区</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p></p>
+
+<p>1.12及之前版本的sync.Pool有三个问题：</p>
+
+<ol>
+<li><p>每次GC都回收所有对象，如果缓存对象数量太大，会导致STW1阶段的耗时增加。</p></li>
+
+<li><p>每次GC都回收所有对象，导致缓存对象命中率下降，New方法的执行造成额外的内存分配消耗。</p></li>
+
+<li><p>Pool.Get方法底层有锁，极端情况下，要尝试最多P次抢锁，也获取不到缓存对象，最后得执行New方法返回对象。</p></li>
+</ol>
+
+<p>这些问题就对sync.Pool的室使用提出了要求，不满足时，性能并不会有大幅提升：</p>
+
+<ol>
+<li><p>最好是高并发场景。（对应问题3）</p></li>
+
+<li><p>最好两次GC之间的间隔足够长。（对应问题1，2）</p></li>
+</ol>
+
+<p><strong>先简单介绍下原理，看哪块源码造成这三个问题。</strong></p>
+
+<blockquote>
+<p>如果对sync.Pool的基本原理一点都不了解，可以移步先阅读《<a href="http://cbsheng.github.io/posts/golang%E6%A0%87%E5%87%86%E5%BA%93sync.pool%E5%8E%9F%E7%90%86%E5%8F%8A%E6%BA%90%E7%A0%81%E7%AE%80%E6%9E%90/">golang标准库sync.Pool原理及源码简析</a>》</p>
+</blockquote>
+
+<p>sync.Pool对象内部为每个P都分配了一个<strong>private区</strong>和<strong>shared区</strong>。</p>
+
+<p>private区只能存放一个可复用对象，因为每个P在任意时刻只运行一个G，所以在private区上写入和取出对象是不用加锁的。</p>
+
+<p>shared区可以放多个可复用对象，它本身是slice。进shared区就append，出shared区就slice[:last-1]。但shared区上写入和取出对象要加锁，因为别的G可能过来偷对象。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span><span class="lnt">8
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">type</span> <span class="nx">poolLocalInternal</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="c1">// 私有对象，每个P都有，用于不同G执行get和put可以无锁操作
+</span><span class="c1"></span>	<span class="nx">private</span> <span class="kd">interface</span><span class="p">{}</span>
+	<span class="c1">// 共享对象数组，每个P都有一个，同一个P上不同G可以多次执行put方法，需要有地方能存储。并且别的P上的G可能过来偷，所以要加锁
+</span><span class="c1"></span>	<span class="nx">shared</span>  <span class="p">[]</span><span class="kd">interface</span><span class="p">{}</span>
+	<span class="c1">// 对shared进行加锁，private不用加锁
+</span><span class="c1"></span>	<span class="nx">Mutex</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>问题3 就是由于shared区是一个带锁的后进先出队列造成的。每次Pool.Get方法在调用时，执行顺序是：</p>
+
+<ol>
+<li>先看当前P的private区是否为空。</li>
+<li>加锁，看当前P的shared区是否为空。</li>
+<li>加锁，循环遍历看其他P的shared区是否为空。</li>
+<li>只要上面三步任意一步就不为空，就可以把缓存对象返回了。但若都为空，最后就得调用New方法返回对象。</li>
+</ol>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 遍历一次其他P的共享区，偷一个，每次尝试偷都得上锁
+</span><span class="c1"></span><span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="p">&lt;</span> <span class="nb">int</span><span class="p">(</span><span class="nx">size</span><span class="p">);</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+  <span class="c1">// 定位到某个P上的shared区
+</span><span class="c1"></span>  <span class="nx">l</span> <span class="o">:=</span> <span class="nx">indexLocal</span><span class="p">(</span><span class="nx">local</span><span class="p">,</span> <span class="p">(</span><span class="nx">pid</span><span class="o">+</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span><span class="o">%</span><span class="nb">int</span><span class="p">(</span><span class="nx">size</span><span class="p">))</span>
+  <span class="nx">l</span><span class="p">.</span><span class="nx">Lock</span><span class="p">()</span>
+  <span class="nx">last</span> <span class="o">:=</span> <span class="nb">len</span><span class="p">(</span><span class="nx">l</span><span class="p">.</span><span class="nx">shared</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>
+  <span class="k">if</span> <span class="nx">last</span> <span class="o">&gt;=</span> <span class="mi">0</span> <span class="p">{</span>
+    <span class="c1">// 如果有缓存对象，就返回，并解锁
+</span><span class="c1"></span>    <span class="nx">x</span> <span class="p">=</span> <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span><span class="p">[</span><span class="nx">last</span><span class="p">]</span>
+    <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span> <span class="p">=</span> <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span><span class="p">[:</span><span class="nx">last</span><span class="p">]</span>
+    <span class="nx">l</span><span class="p">.</span><span class="nx">Unlock</span><span class="p">()</span>
+    <span class="k">break</span>
+  <span class="p">}</span>
+  <span class="c1">// 没有缓存对象，解锁，继续遍历下一个P
+</span><span class="c1"></span>  <span class="nx">l</span><span class="p">.</span><span class="nx">Unlock</span><span class="p">()</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>这一顿的加锁操作和Mutex锁自带的阻塞唤醒开销，Get方法在极端情况下就会有性能问题。</p>
+
+<blockquote>
+<p>Mutex锁分析参考《<a href="https://mp.weixin.qq.com/s/ABw3nv7HdtG1Fj_Iux5czw">一份详细注释的go Mutex源码</a>》</p>
+</blockquote>
+
+<p>问题2和3 都是由于每次GC时，遍历清空所有缓存对象造成的。</p>
+
+<p>sync.Pool在init()中向runtime注册了一个cleanup方法，它在STW1阶段被调用的。如果它执行过久，就会硬生生延长STW1阶段耗时。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">init</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">runtime_registerPoolCleanup</span><span class="p">(</span><span class="nx">poolCleanup</span><span class="p">)</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>这个cleanup方法干的事情是遍历所有的sync.Pool对象，再遍历每个sync.Pool对象中的每个P的shared区，把shared区每个缓存对象设置为nil。代码中就是三层for循环，简单粗暴时间复杂度高。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">poolCleanup</span><span class="p">()</span> <span class="p">{</span>
+  <span class="c1">// ...
+</span><span class="c1"></span>  <span class="k">for</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">p</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">allPools</span> <span class="p">{</span>
+    <span class="c1">// 有多少个Sync.Pool对象，遍历多少次
+</span><span class="c1"></span>    <span class="nx">allPools</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="p">=</span> <span class="kc">nil</span>
+    <span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="p">&lt;</span> <span class="nb">int</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">localSize</span><span class="p">);</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+      <span class="c1">// 有多少个P，遍历多少次
+</span><span class="c1"></span>      <span class="nx">l</span> <span class="o">:=</span> <span class="nx">indexLocal</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">local</span><span class="p">,</span> <span class="nx">i</span><span class="p">)</span>
+      <span class="nx">l</span><span class="p">.</span><span class="nx">private</span> <span class="p">=</span> <span class="kc">nil</span>
+      <span class="k">for</span> <span class="nx">j</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span> <span class="p">{</span>
+        <span class="c1">// 清空shared区中每个缓存对象
+</span><span class="c1"></span>        <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span> <span class="p">=</span> <span class="kc">nil</span>
+      <span class="p">}</span>
+      <span class="nx">l</span><span class="p">.</span><span class="nx">shared</span> <span class="p">=</span> <span class="kc">nil</span>
+    <span class="p">}</span>
+    <span class="c1">// ...
+</span><span class="c1"></span>	<span class="p">}</span>
+  <span class="c1">// ...
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>好消息是1.13beta1已经解决了这三个问题。注意是beta版本，而不是stable版本。</p>
+
+<p>接下来主要看1.13通过什么思路解决这些问题的。</p>
+
+<blockquote>
+<p>不排除未来的stable版本或1.13的小版本会对这块实现做小改动。</p>
+</blockquote>
+
+<h3 id="取消每次gc默认对全部对象进行回收">取消每次GC默认对全部对象进行回收</h3>
+
+<p>解决问题2和3的思路就是不能每次全部回收。但该回收多少呢？</p>
+
+<p>@<a href="https://github.com/aclements">aclements</a> 提出了一种思路，这轮在sync.Pool中的对象。最快也在下轮GC才被回收。</p>
+
+<blockquote>
+<p><a href="https://github.com/golang/go/issues/22950#issuecomment-352935997">https://github.com/golang/go/issues/22950#issuecomment-352935997</a></p>
+</blockquote>
+
+<p>还记得上面说过每个P都有private区和shared区吗？现在每个P里两个区合在一起构成数组，给个名字叫<strong>local</strong>（其实也是源码中的实现）。1.13版本的实现中再引入一个<strong>victim</strong>，它结构与local一致。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 1.13版本源码
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Pool</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">local</span>     <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span> <span class="c1">// 实际指向[P]poolLocal
+</span><span class="c1"></span>	<span class="nx">localSize</span> <span class="kt">uintptr</span>        <span class="c1">// P的个数
+</span><span class="c1"></span>
+	<span class="nx">victim</span>     <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Pointer</span> <span class="c1">// 指向上轮的local
+</span><span class="c1"></span>	<span class="nx">victimSize</span> <span class="kt">uintptr</span>        <span class="c1">// 指向上轮的localSize
+</span><span class="c1"></span>
+	<span class="nx">New</span> <span class="kd">func</span><span class="p">()</span> <span class="kd">interface</span><span class="p">{}</span>
+<span class="p">}</span>
+
+<span class="kd">type</span> <span class="nx">poolLocal</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">poolLocalInternal</span>
+	<span class="nx">pad</span> <span class="p">[</span><span class="mi">128</span> <span class="o">-</span> <span class="nx">unsafe</span><span class="p">.</span><span class="nx">Sizeof</span><span class="p">(</span><span class="nx">poolLocalInternal</span><span class="p">{})</span><span class="o">%</span><span class="mi">128</span><span class="p">]</span><span class="kt">byte</span>
+<span class="p">}</span>
+
+<span class="kd">type</span> <span class="nx">poolLocalInternal</span> <span class="kd">struct</span> <span class="p">{</span>
+	<span class="nx">private</span> <span class="kd">interface</span><span class="p">{}</span>
+	<span class="nx">shared</span>  <span class="nx">poolChain</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>有了victim，Get和Put方法的步骤就有所变化：</p>
+
+<ol>
+<li>Get时，先从local里尝试取出缓存对象（包括所有的P）。如果失败，就尝试从victim里取。</li>
+<li>victim里也取对象失败，就调用New方法。</li>
+<li>Put时，只放local里。</li>
+</ol>
+
+<p>新的数据结构下，cleanup方法策略也有所变化，改为每次只把victim里的对象回收掉。然后victim再指向当前的local。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">var</span> <span class="p">(</span>
+  <span class="c1">// 所有sync.Pool对象
+</span><span class="c1"></span>	<span class="nx">allPools</span> <span class="p">[]</span><span class="o">*</span><span class="nx">Pool</span>
+  <span class="c1">// 待回收的所有sync.Pool对象
+</span><span class="c1"></span>	<span class="nx">oldPools</span> <span class="p">[]</span><span class="o">*</span><span class="nx">Pool</span>
+<span class="p">)</span>
+<span class="kd">func</span> <span class="nx">poolCleanup</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">p</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">oldPools</span> <span class="p">{</span>
+    <span class="c1">// 每次只回收victim
+</span><span class="c1"></span>		<span class="nx">p</span><span class="p">.</span><span class="nx">victim</span> <span class="p">=</span> <span class="kc">nil</span>
+		<span class="nx">p</span><span class="p">.</span><span class="nx">victimSize</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="p">}</span>
+
+	<span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">p</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">allPools</span> <span class="p">{</span>
+    <span class="c1">// victim指向当前的local
+</span><span class="c1"></span>		<span class="nx">p</span><span class="p">.</span><span class="nx">victim</span> <span class="p">=</span> <span class="nx">p</span><span class="p">.</span><span class="nx">local</span>
+		<span class="nx">p</span><span class="p">.</span><span class="nx">victimSize</span> <span class="p">=</span> <span class="nx">p</span><span class="p">.</span><span class="nx">localSize</span>
+		<span class="nx">p</span><span class="p">.</span><span class="nx">local</span> <span class="p">=</span> <span class="kc">nil</span>
+		<span class="nx">p</span><span class="p">.</span><span class="nx">localSize</span> <span class="p">=</span> <span class="mi">0</span>
+	<span class="p">}</span>
+	<span class="nx">oldPools</span><span class="p">,</span> <span class="nx">allPools</span> <span class="p">=</span> <span class="nx">allPools</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>显然这样好处就是这轮的缓存对象在GC时不会立马回收，而是存放起来，滞后一轮。这样下一轮能得到复用机会，提高了缓存对象的命中率。并且回收对象时，由对shared区O(n)的遍历操作，变成O(1)。</p>
+
+<p>从benchmark感受这个优化带来的性能提升：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="c1"># 1.9.7
+</span><span class="c1"></span>BenchmarkPoolSTW-8   	p96-ns/STW <span class="m">285485</span> p50-ns/STW <span class="m">190467</span>
+<span class="c1"># 1.13beta1
+</span><span class="c1"></span>BenchmarkPoolSTW-8   	p96-ns/STW <span class="m">7720</span>  p50-ns/STW <span class="m">4979</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>1.9.7版本的STW1阶段耗时TP96线是285485ns，而1.13beta1是7720ns。</p>
+
+<blockquote>
+<p>Benchmark代码参考1.13beat1源码src/sync/pool_test.go.BenchmarkPoolSTW方法</p>
+</blockquote>
+
+<h3 id="使用无锁队列替换shared区">使用无锁队列替换shared区</h3>
+
+<p>问题3 是因为在shared的访问加了一把Mutex锁造成的。如果不消除这把锁，引入victim区也是徒劳。因为此时victim的访问也得加锁。</p>
+
+<p>旧实现中shared区是单纯的带锁后进先出队列，1.13beta版本改成了单生产者，多消费者的双端无锁环形队列。</p>
+
+<p>单生产者是指，每个P上运行的G，执行Put方法时，就往队列里存放缓存对象（别的P上运行的G不能往里放），并且只能放在队列头部。由于每个P任意时刻只有一个G被运行，所以存放缓存对象不需要加锁。</p>
+
+<p>多消费者分两种角色，一是在P上运行的G，执行Get方法时，从队列头部取出缓存对象。同上，取对象不用加锁；二是在其他P上运行的G，执行Get方法时，本地没有缓存对象，就到别的P上偷。此时盗窃者G只能从队列尾部取出对象，因为盗窃者可能有多个，所以尾部取数据用CAS来实现无锁。</p>
+
+<blockquote>
+<p>注意，每个P都持有自己无锁队列，下图只画出了P0的。</p>
+
+<p>并且队列也可能有多个，下图只画出单队列的情况。</p>
+</blockquote>
+
+<p><img src="/img/image-20190805203140620.png" alt="image-20190805203140620" /></p>
+
+<blockquote>
+<p>如何正确地实现无锁队列超出本文意图，不展开介绍。感兴趣可以自行找资料学习或看源码。</p>
+</blockquote>
+
+<p>每个P持有的循环队列初始化多大呢？增长和收缩策略呢？</p>
+
+<p>下图用一张图做宏观介绍。</p>
+
+<p><img src="/img/image-20190805225842592.png" alt="image-20190805225842592" /></p>
+
+<p>陈述要点：</p>
+
+<ul>
+<li>shared区改用双向链表，每个链表节点指向一个无锁环形队列。</li>
+<li>链表节点必须在头部插入。</li>
+<li>当前P上的G取缓存对象时，只从头部链表节点指向的无锁队列里取。取不到，沿着prev指针到下一个无锁队列上重复操作，也没有的话。就到别的P上偷。</li>
+<li>盗窃者G在偷缓存对象时，只从尾部链表节点指向的无锁队列里取。取不到，沿着next指针到下一个无锁队列上重复操作，也没有的话。就到别的P上继续偷，直到都偷不着，就调用New方法。</li>
+<li>链表首次插入节点时，指向无锁队列初始化大小为8，增长策略为在头部插入新节点，指向的无锁队列大小为旧头部节点指向无锁队列大小的两倍，始终保持2的n次方大小。</li>
+<li>假如在链表长度为3的情况下。尾部节点指向的无锁队列里缓存对象被偷光了。那么尾部节点会沿着next指针前移，把旧的无锁队列内存释放掉。此时链表长度变为2，这就是链表的收缩策略。最小时剩下一个节点，不会收缩成空链表。</li>
+<li>无锁队列的自身最大的大小是2**30。达到上限时，再执行Put操作就放不进去，也不报错。</li>
+</ul>
+
+<p>总体就是这样，让我们期待1.13的stable版本吧。</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E4%BD%A0%E7%9C%9F%E7%9A%84%E4%BC%9A%E7%94%A8sync.waitgroup%E5%90%97/" data-toggle="tooltip" data-placement="top" title="你真的会用sync.WaitGroup吗">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2019 木白</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>

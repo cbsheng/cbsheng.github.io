@@ -7,10 +7,19 @@
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
     <copyright>&amp;copy; Copyright 2017-2019 木白</copyright>
-    <lastBuildDate>Sat, 27 Jul 2019 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Mon, 05 Aug 2019 00:00:00 +0000</lastBuildDate>
     
 	<atom:link href="http://cbsheng.github.io/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>请问sync.Pool有什么缺点?</title>
+      <link>http://cbsheng.github.io/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/</link>
+      <pubDate>Mon, 05 Aug 2019 00:00:00 +0000</pubDate>
+      
+      <guid>http://cbsheng.github.io/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/</guid>
+      <description>&lt;p&gt;&lt;/p&gt;</description>
+    </item>
     
     <item>
       <title>你真的会用sync.WaitGroup吗</title>
