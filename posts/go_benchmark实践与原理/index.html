@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>go benchmark实践与原理 - 木白的技术私厨</title>
+  <meta property="og:title" content="go benchmark实践与原理 - 木白的技术私厨" />
+  <meta name="twitter:title" content="go benchmark实践与原理 - 木白的技术私厨" />
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta name="twitter:description" content="">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="木白的技术私厨" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/go_benchmark%E5%AE%9E%E8%B7%B5%E4%B8%8E%E5%8E%9F%E7%90%86/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">木白的技术私厨</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">go benchmark实践与原理</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>August 31, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/golang%E5%AE%9E%E8%B7%B5/">
+            <i class="fas fa-tag"></i>
+            golang实践
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#benchmark常用api">benchmark常用API：</a>
+<ul>
+<li><a href="#串行用法">串行用法</a></li>
+<li><a href="#并行用法">并行用法</a></li>
+<li><a href="#start-stop-resettimer">Start/Stop/ResetTimer()</a></li>
+<li><a href="#b-run">b.Run()</a></li>
+<li><a href="#b-setbytes-n-int">b.SetBytes(n int)</a></li>
+<li><a href="#b-reportallocs">b.ReportAllocs()</a></li>
+<li><a href="#testing-benchmark">testing.Benchmark()</a></li>
+</ul></li>
+<li><a href="#benchmark输出项含义">benchmark输出项含义</a></li>
+<li><a href="#原理">原理</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p></p>
+
+<p>go自带的benchmark是利器，有了它，开发者可以方便快捷地在测试一个函数方法在串行或并行环境下的基准表现。指定一个时间（默认是1秒），看测试对象在达到或超过时间上限时，最多能被执行多少次和在此期间测试对象内存分配情况。</p>
+
+<h3 id="benchmark常用api">benchmark常用API：</h3>
+
+<ol>
+<li>b.StopTimer()</li>
+<li>b.StartTimer()</li>
+<li>b.ResetTimer()</li>
+<li>b.Run(name string, f func(b *B))</li>
+<li>b.RunParallel(body func(*PB))</li>
+<li>b.ReportAllocs()</li>
+<li>b.SetParallelism(p int)</li>
+<li>b.SetBytes(n int64)</li>
+<li>testing.Benchmark(f func(b *B)) BenchmarkResult</li>
+</ol>
+
+<p>通过例子看它们之间的组合用法。benchtime默认为1秒。</p>
+
+<h4 id="串行用法">串行用法</h4>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">BenchmarkFoo</span><span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span> <span class="p">{</span>
+  <span class="k">for</span> <span class="nx">i</span><span class="o">:=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="p">&lt;</span><span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+    <span class="nx">dosomething</span><span class="p">()</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>最基本用法，测试dosomething()在达到1秒或超过1秒时，总共执行多少次。b.N的值就是最大次数。</p>
+
+<h4 id="并行用法">并行用法</h4>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">BenchmarkFoo</span><span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">b</span><span class="p">.</span><span class="nx">RunParallel</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">pb</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">PB</span><span class="p">)</span> <span class="p">{</span>
+		<span class="k">for</span> <span class="nx">pb</span><span class="p">.</span><span class="nx">Next</span><span class="p">()</span> <span class="p">{</span>
+			<span class="nx">dosomething</span><span class="p">()</span>
+		<span class="p">}</span>
+	<span class="p">})</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>如果代码只是像上例这样写，那么并行的goroutine个数是默认等于runtime.GOMAXPROCS(0)。</p>
+
+<p>创建P个goroutine之后，再把b.N打散到每个goroutine上执行。所以并行用法就比较适合IO型的测试对象。</p>
+
+<p>若想增大goroutine的个数，那就使用<code>b.SetParallelism(p int)</code>。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 最终goroutine个数 = 形参p的值 * runtime.GOMAXPROCS(0)
+</span><span class="c1"></span><span class="nx">numProcs</span> <span class="o">:=</span> <span class="nx">b</span><span class="p">.</span><span class="nx">parallelism</span> <span class="o">*</span> <span class="nx">runtime</span><span class="p">.</span><span class="nx">GOMAXPROCS</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>要注意，b.SetParallelism()的调用一定要放在b.RunParallel()之前。</p>
+
+<p>并行用法带来一些启示，注意到b.N是被RunParallel()接管的。意味着，开发者可以自己写一个RunParallel()方法，goroutine个数和b.N的打散机制自己控制。或接管b.N之后，定制自己的策略。</p>
+
+<p>要注意b.N会递增，这次b.N执行完，不满足终止条件，就会递增b.N，逼近上限，直至满足终止条件。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 终止策略: 执行过程中没有竟态问题 &amp; 时间没超出 &amp; 次数没达到上限
+</span><span class="c1">// d := b.benchTime
+</span><span class="c1"></span><span class="k">if</span> <span class="p">!</span><span class="nx">b</span><span class="p">.</span><span class="nx">failed</span> <span class="o">&amp;&amp;</span> <span class="nx">b</span><span class="p">.</span><span class="nx">duration</span> <span class="p">&lt;</span> <span class="nx">d</span> <span class="o">&amp;&amp;</span> <span class="nx">n</span> <span class="p">&lt;</span> <span class="mf">1e9</span> <span class="p">{}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p><strong>公共部分</strong></p>
+
+<p>剩下的API用法就不分串行还是并行了，用在哪种环境下都可以。</p>
+
+<h4 id="start-stop-resettimer">Start/Stop/ResetTimer()</h4>
+
+<p>这三个都是对 <strong>计时统计器</strong> 和 <strong>内存统计器</strong> 操作。</p>
+
+<p>benchmark中难免有一些初始化的工作，这些工作耗时不希望被计算进benchmark结果中。</p>
+
+<p>通常做法是</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span><span class="lnt">8
+</span><span class="lnt">9
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// 串行情况在for循环之前调用
+</span><span class="c1"></span><span class="nx">init</span><span class="p">()</span> <span class="c1">// 初始化工作
+</span><span class="c1"></span><span class="nx">b</span><span class="p">.</span><span class="nx">ResetTimer</span><span class="p">()</span>
+<span class="k">for</span> <span class="nx">i</span><span class="o">:=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="p">&lt;</span><span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span> <span class="nx">dosomething</span><span class="p">()</span> <span class="p">}</span>
+
+<span class="c1">// 并行情况在b.RunParallel()之前调用
+</span><span class="c1"></span><span class="nx">init</span><span class="p">()</span> <span class="c1">// 初始化工作
+</span><span class="c1"></span><span class="nx">b</span><span class="p">.</span><span class="nx">ResetTimer</span><span class="p">()</span>
+<span class="nx">b</span><span class="p">.</span><span class="nx">RunParallel</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">pb</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">PB</span><span class="p">)</span> <span class="p">{</span> <span class="nx">dosomething</span><span class="p">()</span> <span class="p">})</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>剩下的StopTimer()和ResetTimer()呢？可以这样用：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="nx">init</span><span class="p">();</span> <span class="c1">// 初始化工作
+</span><span class="c1"></span><span class="nx">b</span><span class="p">.</span><span class="nx">ResetTimer</span><span class="p">()</span>
+<span class="k">for</span> <span class="nx">i</span><span class="o">:=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="p">&lt;</span><span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span> <span class="nx">dosomething1</span><span class="p">()</span> <span class="p">}</span>
+<span class="nx">b</span><span class="p">.</span><span class="nx">StopTimer</span><span class="p">()</span>
+<span class="nx">otherWork</span><span class="p">();</span> <span class="c1">// 例如做一些转换工作
+</span><span class="c1"></span><span class="nx">b</span><span class="p">.</span><span class="nx">StartTimer</span><span class="p">()</span>
+<span class="k">for</span> <span class="nx">i</span><span class="o">:=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="p">&lt;</span><span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span> <span class="nx">dosomething2</span><span class="p">()</span> <span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>也可以这样用：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="nx">init</span><span class="p">();</span> <span class="c1">// 初始化工作
+</span><span class="c1"></span><span class="nx">b</span><span class="p">.</span><span class="nx">ResetTimer</span><span class="p">()</span>
+<span class="k">for</span> <span class="nx">i</span><span class="o">:=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="p">&lt;</span><span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+  <span class="nx">flag</span> <span class="o">:=</span> <span class="nx">dosomething</span><span class="p">()</span>
+  <span class="k">if</span> <span class="nx">flag</span> <span class="p">{</span>
+    <span class="nx">b</span><span class="p">.</span><span class="nx">StopTimer</span><span class="p">()</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nx">b</span><span class="p">.</span><span class="nx">StartTimer</span><span class="p">()</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>理解好这三个方法本质后灵活运用</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">B</span><span class="p">)</span> <span class="nx">StartTimer</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">if</span> <span class="p">!</span><span class="nx">b</span><span class="p">.</span><span class="nx">timerOn</span> <span class="p">{</span>
+		<span class="c1">// 记录当前时间为开始时间 和 内存分配情况
+</span><span class="c1"></span>		<span class="nx">b</span><span class="p">.</span><span class="nx">timerOn</span> <span class="p">=</span> <span class="kc">true</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+<span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">B</span><span class="p">)</span> <span class="nx">StopTimer</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">if</span> <span class="nx">b</span><span class="p">.</span><span class="nx">timerOn</span> <span class="p">{</span>
+		<span class="c1">// 累计记录执行的时间（当前时间 - 记录的开始时间）
+</span><span class="c1"></span>    <span class="c1">// 累计记录内存分配次数和分配字节数
+</span><span class="c1"></span>		<span class="nx">b</span><span class="p">.</span><span class="nx">timerOn</span> <span class="p">=</span> <span class="kc">false</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+<span class="kd">func</span> <span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">B</span><span class="p">)</span> <span class="nx">ResetTimer</span><span class="p">()</span> <span class="p">{</span>
+	<span class="k">if</span> <span class="nx">b</span><span class="p">.</span><span class="nx">timerOn</span> <span class="p">{</span>
+		<span class="c1">// 记录当前时间为开始时间 和 内存分配情况
+</span><span class="c1"></span>	<span class="p">}</span>
+	<span class="c1">// 清空所有的累计变量
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h4 id="b-run">b.Run()</h4>
+
+<p>虽然这个方法被暴露了，但其实在源码内部它是被复用的(下文原理部分介绍)。</p>
+
+<p>它作用就是生成一个subbenchmark，每一个subbenchmark都被当成一个普通的Benchmark执行。</p>
+
+<p>有了它，表驱动法派上用场。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">BenchmarkGCMRead</span><span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span> <span class="p">{</span>
+	<span class="nx">tests</span> <span class="o">:=</span> <span class="p">[]</span><span class="kd">struct</span> <span class="p">{</span>
+		<span class="nx">keyLength</span>   <span class="kt">int</span>
+		<span class="nx">valueLength</span> <span class="kt">int</span>
+		<span class="nx">expectStale</span> <span class="kt">bool</span>
+	<span class="p">}{</span>
+		<span class="p">{</span><span class="nx">keyLength</span><span class="p">:</span> <span class="mi">16</span><span class="p">,</span> <span class="nx">valueLength</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span> <span class="nx">expectStale</span><span class="p">:</span> <span class="kc">false</span><span class="p">},</span>
+		<span class="p">{</span><span class="nx">keyLength</span><span class="p">:</span> <span class="mi">32</span><span class="p">,</span> <span class="nx">valueLength</span><span class="p">:</span> <span class="mi">1024</span><span class="p">,</span> <span class="nx">expectStale</span><span class="p">:</span> <span class="kc">false</span><span class="p">},</span>
+    <span class="c1">// more
+</span><span class="c1"></span>	<span class="p">}</span>
+	<span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">t</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">tests</span> <span class="p">{</span>
+		<span class="nx">name</span> <span class="o">:=</span> <span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&#34;%vKeyLength/%vValueLength/%vExpectStale&#34;</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">keyLength</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">valueLength</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">expectStale</span><span class="p">)</span>
+		<span class="nx">b</span><span class="p">.</span><span class="nx">Run</span><span class="p">(</span><span class="nx">name</span><span class="p">,</span> <span class="kd">func</span><span class="p">(</span><span class="nx">b</span> <span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span> <span class="p">{</span>
+			<span class="nx">benchmarkGCMRead</span><span class="p">(</span><span class="nx">b</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">keyLength</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">valueLength</span><span class="p">,</span> <span class="nx">t</span><span class="p">.</span><span class="nx">expectStale</span><span class="p">)</span>
+		<span class="p">})</span>
+	<span class="p">}</span>
+<span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<h4 id="b-setbytes-n-int">b.SetBytes(n int)</h4>
+
+<p>这个API用得不多。</p>
+
+<p>形参n表示在b.N次循环中，每一次循环用到了多少字节内存。</p>
+
+<p>最后在benchmark输出结果中会多出<strong>MB/s</strong>这一项信息。MB/s取值公式如下：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="p">(</span><span class="nb">float64</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">Bytes</span><span class="p">)</span> <span class="o">*</span> <span class="nb">float64</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">N</span><span class="p">)</span> <span class="o">/</span> <span class="mf">1e6</span><span class="p">)</span> <span class="o">/</span> <span class="nx">r</span><span class="p">.</span><span class="nx">T</span><span class="p">.</span><span class="nx">Seconds</span><span class="p">()</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>意思是这次benchmark每秒大约用了多少MB的内存。</p>
+
+<p>这玩意儿有啥用？个人理解，它可以大概估算堆内存增长趋势来判断GC被触发频率。</p>
+
+<p>例如下面例子，dAtA这种返回值变量一般是被分配在堆上的。最后通过<code>b.SetBytes(int64(total / b.N))</code>来估算下每秒分配多少MB内存。</p>
+
+<p>MB/s值大小的影响要结合GOGC的值来理解，默认GOGC是100，即堆内存增长一倍就被触发GC。如果MB/s值比较小，可以大概认为GC被触发频率较低；反之较高；</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span><span class="lnt">2
+</span><span class="lnt">3
+</span><span class="lnt">4
+</span><span class="lnt">5
+</span><span class="lnt">6
+</span><span class="lnt">7
+</span><span class="lnt">8
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="mi">0</span><span class="p">;</span> <span class="nx">i</span> <span class="p">&lt;</span> <span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span> <span class="p">{</span>
+  <span class="nx">dAtA</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">github_com_gogo_protobuf_proto</span><span class="p">.</span><span class="nx">Marshal</span><span class="p">(</span><span class="nx">pops</span><span class="p">[</span><span class="nx">i</span><span class="o">%</span><span class="mi">10000</span><span class="p">])</span>
+  <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nb">panic</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+  <span class="p">}</span>
+  <span class="nx">total</span> <span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="nx">dAtA</span><span class="p">)</span>
+<span class="p">}</span>
+<span class="nx">b</span><span class="p">.</span><span class="nx">SetBytes</span><span class="p">(</span><span class="nb">int64</span><span class="p">(</span><span class="nx">total</span> <span class="o">/</span> <span class="nx">b</span><span class="p">.</span><span class="nx">N</span><span class="p">))</span></code></pre></td></tr></table>
+</div>
+</div>
+<h4 id="b-reportallocs">b.ReportAllocs()</h4>
+
+<p>b.ReportAllocs()这个API比较简单，就是打上标记，在benchmark执行完毕后，输出信息会包括B/op和allocs/op这两项信息。</p>
+
+<h4 id="testing-benchmark">testing.Benchmark()</h4>
+
+<p>默认benchmark时间(benchtime)上限是1秒，可以通过<code>-test.benchtime</code>来改变：</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt">1
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">var</span> <span class="nx">benchTime</span> <span class="p">=</span> <span class="nx">flag</span><span class="p">.</span><span class="nx">Duration</span><span class="p">(</span><span class="s">&#34;test.benchtime&#34;</span><span class="p">,</span> <span class="mi">1</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">,</span> <span class="s">&#34;run each benchmark for duration `d`&#34;</span><span class="p">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>前面提及到的终止策略中，注意<code>b.duration &lt; d</code>这个条件。不论你写的benchmark运行停止时耗时是1s、1.1s还是60s，benchmark输出结果都是*/op形式，而不是以时间维度的。所以不能认为1秒最多可执行b.N次。</p>
+
+<p>因此想定制benchmark输出的话，那么使用testing.Benchmark()就是最好的方式。例如想看达到b.N时，究竟花了多长时间。</p>
+
+<h3 id="benchmark输出项含义">benchmark输出项含义</h3>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell"><span class="lnt">1
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-shell" data-lang="shell">go <span class="nb">test</span> -bench<span class="o">=</span><span class="s1">&#39;^BenchmarkFoo$&#39;</span> -cpu <span class="m">4</span>,8</code></pre></td></tr></table>
+</div>
+</div>
+<p><img src="/img/go/image-20190831121055273.png" alt="image-20190831121055273" /></p>
+
+<h3 id="原理">原理</h3>
+
+<p>源码太长不做介绍，以单个Benchmark举例串起流程分析下原理。</p>
+
+<p><img src="/img/go/image-20190831111505292.png" alt="image-20190831111505292" /></p>
+
+<p>如上图，浅蓝色部分就是开发者自行编写的benchmark方法，调用逻辑按箭头方向依次递进。</p>
+
+<p>B.run1()的作用是先尝试跑一次，在这次尝试中要做 <strong>竟态检查</strong> 和 <strong>当前benchmark是否被skip了</strong>​。目的检查当前benchmark是否有必要继续执行。</p>
+
+<p>go test 命令有-cpu参数，用于控制benchmark分别在不同的P数量下执行。这里就对应上图绿色部分，每次通过runtime.GOMAXPROCS(n)更新P个数，然后调用B.doBench()。</p>
+
+<p>核心方法是红色部分的B.runN(n)。形参n值就是b.N值，由外部传进。n不断被逼近上限，逼近策略不能过快，过快可能引起benchmark执行超时。</p>
+
+<p>橙色部分就是逼近策略。先通过<code>n/=int(nsop)</code>来估算b.N的上限，然后再通过<code>n=max(min(n+n/5, 100*last), last+1)</code>计算最后的b.N。benchmark可能是CPU型或IO型，若直接使用第一次估算的b.N值会过于粗暴，可能使结果不准确，所以需要做进一步的约束来逼近。</p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/%E8%AF%B7%E9%97%AEsync.pool%E6%9C%89%E4%BB%80%E4%B9%88%E7%BC%BA%E7%82%B9/" data-toggle="tooltip" data-placement="top" title="请问sync.Pool有什么缺点?">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2019 木白</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
