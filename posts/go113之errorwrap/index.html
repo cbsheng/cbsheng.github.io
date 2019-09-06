@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+  <title>go1.13之Error Warp - 木白的技术私厨</title>
+  <meta property="og:title" content="go1.13之Error Warp - 木白的技术私厨" />
+  <meta name="twitter:title" content="go1.13之Error Warp - 木白的技术私厨" />
+  <meta name="description" content="">
+  <meta property="og:description" content="">
+  <meta name="twitter:description" content="">
+  <meta name="author" content=""/>
+  <meta property="og:site_name" content="木白的技术私厨" />
+  <meta property="og:url" content="http://cbsheng.github.io/posts/go113%E4%B9%8Berrorwrap/" />
+  <meta property="og:type" content="article" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.47.1" />
+  <link rel="stylesheet" href="/css/style.css" media="all" />
+  <link rel="stylesheet" href="/css/syntax.css" media="all" />
+  <link rel="stylesheet" href="/css/custom.css" media="all" />
+  <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+  <script defer src="https://use.fontawesome.com/releases/v5.0.10/js/all.js" integrity="sha384-slN8GvtUJGnv6ca26v8EzVaR9DC58QEwsIk9q1QXdCU8Yu8ck/tL/5szYlBbqmS+" crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+<header class="site-header">
+  <nav class="site-navi">
+    <h1 class="site-title"><a href="/">木白的技术私厨</a></h1>
+    <ul class="site-navi-items">
+      <li class="site-navi-item-categories"><a href="/categories/" title="Categories">Categories</a></li>
+      <li class="site-navi-item-tags"><a href="/tags/" title="Tags">Tags</a></li>
+      <li class="site-navi-item-archives"><a href="/archives/" title="Archives">Archives</a></li>
+      <li class="site-navi-item-about"><a href="/about/" title="About">About</a></li>
+    </ul>
+  </nav>
+</header>
+<hr class="site-header-bottom">
+
+  <div class="main" role="main">
+    <article class="article">
+      
+      
+      <h1 class="article-title">go1.13之Error Warp</h1>
+      
+      <hr class="article-title-bottom">
+      <ul class="article-meta">
+        <li class="article-meta-date"><time>September 6, 2019</time></li>
+        <li class="article-meta-categories">
+          <a href="/categories/golang/">
+            <i class="fas fa-folder"></i>
+            Golang
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-categories">
+          <a href="/categories/go-1.13/">
+            <i class="fas fa-folder"></i>
+            Go 1.13
+          </a>&nbsp;
+        </li>
+        <li class="article-meta-tags">
+          <a href="/tags/go/">
+            <i class="fas fa-tag"></i>
+            go
+          </a>&nbsp;
+        </li>
+      </ul>
+      
+<aside class="toc">
+  <nav id="TableOfContents">
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#功能1">功能1</a></li>
+<li><a href="#功能2">功能2</a></li>
+</ul></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+</aside>
+      <p></p>
+
+<p>本文挑重点来看go1.13版本中对于错误处理部分提供的新功能（<strong>Error wrapping</strong>）（proposal参考资料1）。</p>
+
+<p>提案中对于error新功能主要分两点：</p>
+
+<ol>
+<li>error可以包裹着其他error。而不是以前的做法，以字符串拼接方式往上传递。</li>
+<li>使用<code>%+v</code>打印error时，带有堆栈信息，精确到函数名与行号。</li>
+</ol>
+
+<p>其实这两块功能，很早前Dave Cheney就在一篇博文中论述过他对error处理的理解，并给出相关的开源包<code>github.com/pkg/errors</code>(这个库现在也处于维护状态，不再接受新功能)。</p>
+
+<p>用过的同学应该比较熟悉，它解决的问题也是上面提到两点error新功能。</p>
+
+<h4 id="功能1">功能1</h4>
+
+<p>go1.13之前，方法内部逻辑中，遇到其它方法返回error时，一种粗暴的处理方式，直接<code>return fmt.Errorf(&quot;operate failed %v&quot;, err)</code>。这种做法问题是把err转换成为另一个字符串，原始的err被抹掉。</p>
+
+<p>如果想添加额外的错误信息，又不想抹掉原始的err，可以封装一个struct，上层通过<code>err.Err.(type)</code>的方式来检查，但显然加大编码复杂度。</p>
+
+<p>而用了go1.13之后，解决这个问题的方案就变成下面这样</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">func</span> <span class="nx">foo</span><span class="p">()</span> <span class="kt">error</span> <span class="p">{</span>
+  <span class="nx">err</span> <span class="o">:=</span> <span class="nx">openSomething</span><span class="p">()</span>
+  <span class="c1">// %v 变成了 %w
+</span><span class="c1"></span>  <span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&#34;operate failed %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+  <span class="nx">err</span> <span class="o">:=</span> <span class="nx">foo</span><span class="p">()</span>
+  <span class="k">if</span> <span class="nx">errors</span><span class="p">.</span><span class="nx">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">*</span><span class="nx">os</span><span class="p">.</span><span class="nx">PathError</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">pe</span> <span class="nx">os</span><span class="p">.</span><span class="nx">PathError</span>
+    <span class="nx">errors</span><span class="p">.</span><span class="nx">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">pe</span><span class="p">)</span>
+    <span class="c1">// dosomething
+</span><span class="c1"></span>  <span class="p">}</span>
+
+  <span class="c1">// 或者更直接
+</span><span class="c1"></span>  <span class="c1">// var pe os.PathError
+</span><span class="c1"></span>  <span class="c1">// if errors.As(err, &amp;pe) {
+</span><span class="c1"></span>      <span class="c1">// dosomething
+</span><span class="c1"></span>  <span class="c1">// }
+</span><span class="c1"></span><span class="p">}</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>这样原始的err不会变抹掉，通过<code>errors.Is()</code>方法可以检查出来。其次通过<code>fmt.Println()</code>输出是仍是字符串，样式与之前使用%v`时相比较没有改变。</p>
+
+<p>还可以通过<code>errors.As()</code>方法将对应的原始err提取出来。</p>
+
+<p>所以用户在升级新版本后，有两个地方的代码需要转换下</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="c1">// before
+</span><span class="c1"></span><span class="k">if</span> <span class="nx">err</span> <span class="o">==</span> <span class="nx">io</span><span class="p">.</span><span class="nx">ErrUnexpectedEOF</span>
+<span class="c1">// after
+</span><span class="c1"></span><span class="k">if</span> <span class="nx">errors</span><span class="p">.</span><span class="nx">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">io</span><span class="p">.</span><span class="nx">ErrUnexpectedEOF</span><span class="p">)</span>
+
+<span class="c1">// before
+</span><span class="c1"></span><span class="k">if</span> <span class="nx">e</span><span class="p">,</span> <span class="nx">ok</span> <span class="o">:=</span> <span class="nx">err</span><span class="p">.(</span><span class="o">*</span><span class="nx">os</span><span class="p">.</span><span class="nx">PathError</span><span class="p">);</span> <span class="nx">ok</span>
+<span class="c1">// after
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">e</span> <span class="o">*</span><span class="nx">os</span><span class="p">.</span><span class="nx">PathError</span>
+<span class="k">if</span> <span class="nx">errors</span><span class="p">.</span><span class="nx">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">e</span><span class="p">)</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>用了这两种做法，即使API提供方后面更改返回的error含义，兼容成本较低。</p>
+
+<p>基于go1.13之前不同error不同的使用场景，官方写了FAQ，参考资料3。</p>
+
+<h4 id="功能2">功能2</h4>
+
+<p>打印error时带上堆栈信息功能很实用，之前遇到error时，排查都需要顺藤摸瓜的找到源头，比较浪费时间。</p>
+
+<p>坏消息，功能2在go1.13官方标准库中被腰斩了，推迟到go1.14。详细原因可参考资料2。</p>
+
+<p>好消息是官方提供了<code>golang.org/x/xerrors</code>。这个包完整实现了这两个新功能点，主要生产环境不易升级go版本的用户，可以尝鲜，或者是对已经升级为新版本的下游做兼容。</p>
+
+<p>看一下使用<code>xerrors</code>包打印error时带堆栈的效果。</p>
+<div class="highlight"><div class="chroma">
+<table class="lntable"><tr><td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="lnt"> 1
+</span><span class="lnt"> 2
+</span><span class="lnt"> 3
+</span><span class="lnt"> 4
+</span><span class="lnt"> 5
+</span><span class="lnt"> 6
+</span><span class="lnt"> 7
+</span><span class="lnt"> 8
+</span><span class="lnt"> 9
+</span><span class="lnt">10
+</span><span class="lnt">11
+</span><span class="lnt">12
+</span><span class="lnt">13
+</span><span class="lnt">14
+</span><span class="lnt">15
+</span><span class="lnt">16
+</span><span class="lnt">17
+</span><span class="lnt">18
+</span><span class="lnt">19
+</span><span class="lnt">20
+</span><span class="lnt">21
+</span><span class="lnt">22
+</span><span class="lnt">23
+</span><span class="lnt">24
+</span><span class="lnt">25
+</span><span class="lnt">26
+</span><span class="lnt">27
+</span></code></pre></td>
+<td class="lntd">
+<pre class="chroma"><code class="language-go" data-lang="go"><span class="kd">var</span> <span class="nx">myerror</span> <span class="p">=</span> <span class="nx">xerrors</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="s">&#34;myerror&#34;</span><span class="p">)</span>
+<span class="kd">func</span> <span class="nx">foo</span><span class="p">()</span> <span class="kt">error</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="nx">myerror</span>
+<span class="p">}</span>
+<span class="kd">func</span> <span class="nx">foo1</span><span class="p">()</span> <span class="kt">error</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="nx">xerrors</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&#34;foo1 : %w&#34;</span><span class="p">,</span><span class="nx">foo</span><span class="p">())</span>
+<span class="p">}</span>
+<span class="kd">func</span> <span class="nx">foo2</span><span class="p">()</span> <span class="kt">error</span> <span class="p">{</span>
+	<span class="k">return</span> <span class="nx">xerrors</span><span class="p">.</span><span class="nx">Errorf</span><span class="p">(</span><span class="s">&#34;foo2 : %w&#34;</span><span class="p">,</span><span class="nx">foo1</span><span class="p">())</span>
+<span class="p">}</span>
+<span class="kd">func</span> <span class="nx">main</span><span class="p">()</span> <span class="p">{</span>
+	<span class="nx">err</span> <span class="o">:=</span> <span class="nx">foo2</span><span class="p">()</span>
+	<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&#34;%v\n&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+	<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// 以下是输出
+</span><span class="c1"></span><span class="nx">foo2</span> <span class="p">:</span> <span class="nx">foo1</span> <span class="p">:</span> <span class="nx">myerror</span>
+<span class="nx">foo2</span> <span class="p">:</span>
+    <span class="nx">main</span><span class="p">.</span><span class="nx">foo2</span>
+        <span class="o">/</span><span class="nx">Users</span><span class="o">/</span><span class="nx">cbsheng</span><span class="o">/</span><span class="nx">goproject</span><span class="o">/</span><span class="nx">src</span><span class="o">/</span><span class="nx">test</span><span class="o">/</span><span class="nx">main</span><span class="p">.</span><span class="k">go</span><span class="p">:</span><span class="mi">116</span>
+  <span class="o">-</span> <span class="nx">foo1</span> <span class="p">:</span>
+    <span class="nx">main</span><span class="p">.</span><span class="nx">foo1</span>
+        <span class="o">/</span><span class="nx">Users</span><span class="o">/</span><span class="nx">cbsheng</span><span class="o">/</span><span class="nx">goproject</span><span class="o">/</span><span class="nx">src</span><span class="o">/</span><span class="nx">test</span><span class="o">/</span><span class="nx">main</span><span class="p">.</span><span class="k">go</span><span class="p">:</span><span class="mi">113</span>
+  <span class="o">-</span> <span class="nx">myerror</span><span class="p">:</span>
+    <span class="nx">main</span><span class="p">.</span><span class="nx">init</span>
+        <span class="o">/</span><span class="nx">Users</span><span class="o">/</span><span class="nx">cbsheng</span><span class="o">/</span><span class="nx">goproject</span><span class="o">/</span><span class="nx">src</span><span class="o">/</span><span class="nx">test</span><span class="o">/</span><span class="nx">main</span><span class="p">.</span><span class="k">go</span><span class="p">:</span><span class="mi">108</span></code></pre></td></tr></table>
+</div>
+</div>
+<p>注意，<code>xerrors.Errorf(&quot;foo1 : %w&quot;,foo())</code>中必须以<code>: %w</code>的格式占位，否则不起作用。</p>
+
+<p>资料1：<a href="https://go.googlesource.com/proposal/+/master/design/29934-error-values.md">https://go.googlesource.com/proposal/+/master/design/29934-error-values.md</a></p>
+
+<p>资料2：<a href="https://github.com/golang/go/issues/29934#issuecomment-489682919">https://github.com/golang/go/issues/29934#issuecomment-489682919</a></p>
+
+<p>资料3：<a href="https://github.com/golang/go/wiki/ErrorValueFAQ">https://github.com/golang/go/wiki/ErrorValueFAQ</a></p>
+    </article>
+
+    
+<ul class="article-share">
+    <li>
+      <a href="https://twitter.com/share" class="twitter-share-button">Tweet</a> <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+    </li>
+    <li>
+      <a data-pocket-label="pocket" data-pocket-count="horizontal" class="pocket-btn" data-lang="en"></a>
+      <script>!function(d,i){if(!d.getElementById(i)){var j=d.createElement("script");j.id=i;j.src="https://widgets.getpocket.com/v1/j/btn.js?v=1";var w=d.getElementById(i);d.body.appendChild(j);}}(document,"pocket-btn-js");</script>
+    </li>
+  </ul>
+
+    <ul class="pager article-pager">
+      <li class="pager-newer pager-noitem">&lt; Newer</li>
+      <li class="pager-older">
+        <a href="/posts/go_benchmark%E5%AE%9E%E8%B7%B5%E4%B8%8E%E5%8E%9F%E7%90%86/" data-toggle="tooltip" data-placement="top" title="go benchmark实践与原理">Older &gt;</a>
+      </li>
+    </ul>
+  </div>
+
+
+<div class="site-footer">
+  <div class="copyright">&copy; Copyright 2017-2019 木白</div>
+  <ul class="site-footer-items">
+    <li class="site-footer-item-about"><a href="/about/" title="About">About</a></li>
+  </ul>
+  <div class="powerdby">
+    Powered by <a href="https://gohugo.io/">Hugo</a> and <a href="https://github.com/taikii/whiteplain">Whiteplain</a>
+  </div>
+</div>
+<script src="/js/script.js"></script>
+<script src="/js/custom.js"></script>
+
+
+</body>
+</html>
