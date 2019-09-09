@@ -71,6 +71,46 @@
         <div class="article-floatclear"></div>
       </article>
       <article class="article">
+        <a href="/posts/%E8%BA%B2%E9%81%BFgo113defer%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E7%9A%84%E5%A7%BF%E5%8A%BF/" class="article-titles">
+          <h2 class="article-title">go1.13之Error Warp</h2>
+          
+        </a>
+        <ul class="article-meta">
+          <li class="article-meta-date"><time>September 6, 2019</time></li>
+          <li class="article-meta-categories">
+            <a href="/categories/golang/">
+              <i class="fas fa-folder"></i>
+              Golang
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-categories">
+            <a href="/categories/go-1.13/">
+              <i class="fas fa-folder"></i>
+              Go 1.13
+            </a>&nbsp;
+          </li>
+          <li class="article-meta-tags">
+            <a href="/tags/go/">
+              <i class="fas fa-tag"></i>
+              go
+            </a>&nbsp;
+          </li>
+        </ul>
+        <div class="article-content">
+          本文给出使用go1.13 defer时应该避免的姿势。
+性能提升30%的原理和defer本身的原理不做介绍。这两项可分别参考资料1，2，3。
+资料1简单给出性能提升的一些关键点。重点是原来defer语法依赖的_defer数据结构只能分配在堆上，新版本中可以针对性分配在栈上。免去了systemstack()或mallocgc()带来的开销。
+资料2-3详细介绍了defer原理；此原理在go1.13版本中不过时，因为go1.13的优化场景具有针对性。
+简单来说，要想享受defer带来的30%性能提升。以下两种场景的代码要避免：
+ defer语句外层嵌套有显式循环； defer语句有隐式循环；  显式循环考虑以下代码
+1 2 3 4 5 6 7  package main func main() { for i := 0; i &lt;= 0; i++ { defer func() {}() } }   看汇编结果，底层调用的是runtime.deferproc。还是老方式，即_defer对象分配在堆上。
+1 2 3 4  &#34;&#34;.main STEXT size=121 args=0x0 locals=0x20 # ...  0x0047 00071 (main.go:5) CALL runtime.deferproc(SB) # ...   注意循环只执行一次，实际只要它有循环次数，都是在堆上分配对象。等于性能优化享受不了。
+1 2  for i := 0; i &lt;= -1; i++ {} // 堆和栈都不分配。因为循环不被执行 for i := 0; i &lt;= [等于或大于0的任何正整数]; i++ {} // 分配在堆上   隐式循环考虑以下代码
+        </div>
+        <div class="article-readmore"><a href="/posts/%E8%BA%B2%E9%81%BFgo113defer%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E7%9A%84%E5%A7%BF%E5%8A%BF/">Read more...</a></div>
+        <div class="article-floatclear"></div>
+      </article>
+      <article class="article">
         <a href="/posts/go_benchmark%E5%AE%9E%E8%B7%B5%E4%B8%8E%E5%8E%9F%E7%90%86/" class="article-titles">
           <h2 class="article-title">go benchmark实践与原理</h2>
           
@@ -323,38 +363,6 @@
 <p></p>
         </div>
         <div class="article-readmore"><a href="/posts/%E7%AE%80%E5%8D%95%E7%BB%93%E5%90%88mysql%E7%B4%A2%E5%BC%95%E9%9A%94%E7%A6%BB%E6%80%A7%E5%92%8C%E9%94%81%E7%90%86%E8%A7%A3/">Read more...</a></div>
-        <div class="article-floatclear"></div>
-      </article>
-      <article class="article">
-        <a href="/posts/redis%E5%86%85%E5%AD%98%E6%B7%98%E6%B1%B0lru%E5%92%8Clfu/" class="article-titles">
-          <h2 class="article-title">Redis(5.0.3)内存淘汰LRU/LFU</h2>
-          
-        </a>
-        <ul class="article-meta">
-          <li class="article-meta-date"><time>May 20, 2019</time></li>
-          <li class="article-meta-categories">
-            <a href="/categories/redis/">
-              <i class="fas fa-folder"></i>
-              Redis
-            </a>&nbsp;
-          </li>
-          <li class="article-meta-categories">
-            <a href="/categories/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/">
-              <i class="fas fa-folder"></i>
-              源码分析
-            </a>&nbsp;
-          </li>
-          <li class="article-meta-tags">
-            <a href="/tags/redis/">
-              <i class="fas fa-tag"></i>
-              Redis
-            </a>&nbsp;
-          </li>
-        </ul>
-        <div class="article-content">
-          <p></p>
-        </div>
-        <div class="article-readmore"><a href="/posts/redis%E5%86%85%E5%AD%98%E6%B7%98%E6%B1%B0lru%E5%92%8Clfu/">Read more...</a></div>
         <div class="article-floatclear"></div>
       </article>
     </section>
